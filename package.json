@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo-google-fonts/golos-text": "^0.4.2",
     "expo": "~56.0.12",
+    "expo-font": "~56.0.7",
     "expo-image-picker": "~56.0.18",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",

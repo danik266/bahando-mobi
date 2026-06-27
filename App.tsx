@@ -1,4 +1,11 @@
 import { StatusBar } from 'expo-status-bar'
+import {
+  GolosText_400Regular,
+  GolosText_700Bold,
+  GolosText_800ExtraBold,
+  GolosText_900Black,
+  useFonts,
+} from '@expo-google-fonts/golos-text'
 import * as ImagePicker from 'expo-image-picker'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -103,6 +110,13 @@ const WEB_URL = normalizeBaseUrl(
   process.env.EXPO_PUBLIC_WEB_URL ?? 'http://46.101.134.38:4000',
 )
 
+const FONT = {
+  regular: 'GolosText_400Regular',
+  bold: 'GolosText_700Bold',
+  extra: 'GolosText_800ExtraBold',
+  black: 'GolosText_900Black',
+} as const
+
 const emptyData: BootstrapPayload = {
   outlets: [],
   products: [],
@@ -120,13 +134,19 @@ const statusCopy: Record<Status, string> = {
 }
 
 const statusColor: Record<Status, string> = {
-  pending: '#ff5a1f',
-  approved: '#007434',
+  pending: '#ff5e12',
+  approved: '#0d803d',
   rejected: '#c83c31',
   iiko_error: '#c83c31',
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    GolosText_400Regular,
+    GolosText_700Bold,
+    GolosText_800ExtraBold,
+    GolosText_900Black,
+  })
   const [currentUser, setCurrentUser] = useState<Employee | null>(null)
   const [selectedLoginId, setSelectedLoginId] = useState('')
   const [pinCode, setPinCode] = useState('')
@@ -389,9 +409,9 @@ export default function App() {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={isLoading} onRefresh={loadData} />}
         >
-          {isLoading ? (
+          {!fontsLoaded || isLoading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color="#007434" />
+              <ActivityIndicator color="#0d803d" />
               <Text style={styles.muted}>Загрузка...</Text>
             </View>
           ) : !currentUser ? (
@@ -970,7 +990,7 @@ function simpleHash(input: string) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#eef0ef',
+    backgroundColor: '#f8f8f8',
   },
   keyboard: {
     flex: 1,
@@ -982,7 +1002,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 14,
     backgroundColor: '#ffffff',
-    borderBottomColor: '#e3e1dc',
+    borderBottomColor: '#dee2e6',
     borderBottomWidth: 1,
   },
   logo: {
@@ -993,8 +1013,8 @@ const styles = StyleSheet.create({
     height: 54,
     overflow: 'hidden',
     borderWidth: 6,
-    borderColor: '#24211f',
-    backgroundColor: '#007434',
+    borderColor: '#292929',
+    backgroundColor: '#0d803d',
   },
   logoBlackLine: {
     position: 'absolute',
@@ -1002,7 +1022,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 17,
     height: 14,
-    backgroundColor: '#24211f',
+    backgroundColor: '#292929',
   },
   logoStripe: {
     position: 'absolute',
@@ -1010,7 +1030,7 @@ const styles = StyleSheet.create({
     top: 19,
     width: 40,
     height: 12,
-    backgroundColor: '#ff5a1f',
+    backgroundColor: '#ff5e12',
   },
   logoStripeLeft: {
     left: 0,
@@ -1023,17 +1043,20 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 34,
     fontWeight: '900',
+    fontFamily: FONT.black,
     letterSpacing: 0,
   },
   headerTitle: {
-    color: '#24211f',
-    fontSize: 20,
+    color: '#292929',
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   headerSub: {
-    color: '#6f7885',
-    fontSize: 13,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   content: {
     gap: 14,
@@ -1044,12 +1067,13 @@ const styles = StyleSheet.create({
     margin: 14,
     marginBottom: 0,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 14,
     backgroundColor: '#fff0ee',
   },
   errorText: {
     color: '#c83c31',
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   userGrid: {
     gap: 8,
@@ -1058,34 +1082,36 @@ const styles = StyleSheet.create({
     gap: 6,
     minHeight: 78,
     padding: 14,
-    borderRadius: 8,
-    backgroundColor: '#007434',
+    borderRadius: 14,
+    backgroundColor: '#0d803d',
   },
   greenLabel: {
     color: 'rgba(255,255,255,0.76)',
-    fontSize: 13,
+    fontSize: 14.4,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   greenValue: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   tabs: {
     flexDirection: 'row',
     gap: 5,
     padding: 5,
-    borderRadius: 8,
-    backgroundColor: '#f6f6f4',
+    borderRadius: 10,
+    backgroundColor: '#f8f8f8',
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
-    borderRadius: 7,
+    borderRadius: 6,
   },
   tabButtonActive: {
     backgroundColor: '#ffffff',
@@ -1095,11 +1121,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
   },
   tabText: {
-    color: '#6f7885',
+    color: 'rgba(0, 0, 0, 0.5)',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   tabTextActive: {
-    color: '#24211f',
+    color: '#292929',
   },
   loadingBox: {
     alignItems: 'center',
@@ -1107,26 +1134,30 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   muted: {
-    color: '#6f7885',
+    color: 'rgba(0, 0, 0, 0.5)',
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   loginPanel: {
     gap: 12,
     padding: 14,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
   },
   loginTitle: {
-    color: '#24211f',
-    fontSize: 22,
+    color: '#292929',
+    fontSize: 32,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   loginCopy: {
-    color: '#6f7885',
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 17.6,
     fontWeight: '800',
-    lineHeight: 20,
+    fontFamily: FONT.extra,
+    lineHeight: 24,
   },
   loginUser: {
     width: '48%',
@@ -1134,41 +1165,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#e4e4df',
-    backgroundColor: '#f6f6f4',
+    borderColor: '#dee2e6',
+    backgroundColor: '#f8f8f8',
   },
   loginUserActive: {
-    borderColor: '#007434',
+    borderColor: '#0d803d',
     backgroundColor: '#e8f6ed',
   },
   loginUserName: {
-    color: '#24211f',
+    color: '#292929',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   loginUserRole: {
-    color: '#6f7885',
-    fontSize: 12,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   errorBoxInline: {
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 14,
     backgroundColor: '#fff0ee',
   },
   logoutButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 42,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#cfcfc7',
+    borderColor: '#cecece',
     backgroundColor: '#ffffff',
   },
   logoutText: {
-    color: '#24211f',
+    color: '#292929',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   form: {
     gap: 12,
@@ -1178,19 +1212,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 250,
     overflow: 'hidden',
-    borderRadius: 8,
-    backgroundColor: '#f1f1ee',
+    borderRadius: 14,
+    backgroundColor: '#f8f8f8',
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
   },
   photo: {
     width: '100%',
     height: 250,
   },
   photoPlaceholder: {
-    color: '#6f7885',
-    fontSize: 17,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 17.6,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   actionRow: {
     flexDirection: 'row',
@@ -1201,38 +1236,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 46,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#cfcfc7',
+    borderColor: '#cecece',
     backgroundColor: '#ffffff',
   },
   secondaryText: {
-    color: '#24211f',
+    color: '#292929',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   orangeButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 46,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#ffc3a7',
     backgroundColor: '#fff0e8',
   },
   orangeText: {
-    color: '#ff5a1f',
+    color: '#ff5e12',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   hashText: {
-    color: '#6f7885',
-    fontSize: 12,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   label: {
-    color: '#6f7885',
-    fontSize: 13,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   chipGrid: {
     flexDirection: 'row',
@@ -1243,22 +1282,24 @@ const styles = StyleSheet.create({
     minHeight: 40,
     justifyContent: 'center',
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
   },
   chipActive: {
-    borderColor: '#007434',
+    borderColor: '#0d803d',
     backgroundColor: '#e8f6ed',
   },
   chipText: {
-    color: '#24211f',
+    color: '#292929',
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   chipTextActive: {
-    color: '#007434',
+    color: '#0d803d',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   inputGrid: {
     flexDirection: 'row',
@@ -1271,12 +1312,13 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#cfcfc7',
+    borderColor: '#cecece',
     backgroundColor: '#ffffff',
-    color: '#1d232b',
-    fontSize: 16,
+    color: '#212529',
+    fontSize: 17.6,
+    fontFamily: FONT.regular,
   },
   commentInput: {
     minHeight: 110,
@@ -1287,10 +1329,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 5,
     padding: 5,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#e4e4df',
-    backgroundColor: '#f6f6f4',
+    borderColor: '#dee2e6',
+    backgroundColor: '#f8f8f8',
   },
   submitButton: {
     flexDirection: 'row',
@@ -1298,16 +1340,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     minHeight: 52,
-    borderRadius: 8,
-    backgroundColor: '#007434',
+    borderRadius: 10,
+    backgroundColor: '#0d803d',
   },
   disabledButton: {
     opacity: 0.72,
   },
   submitText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   requestList: {
     gap: 10,
@@ -1315,75 +1358,83 @@ const styles = StyleSheet.create({
   reviewPanel: {
     gap: 12,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
   },
   reviewPhoto: {
     width: '100%',
     height: 240,
-    borderRadius: 8,
-    backgroundColor: '#f1f1ee',
+    borderRadius: 14,
+    backgroundColor: '#f8f8f8',
   },
   reviewTitle: {
-    color: '#24211f',
-    fontSize: 21,
+    color: '#292929',
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   reviewInfo: {
-    color: '#24211f',
-    fontSize: 16,
+    color: '#292929',
+    fontSize: 17.6,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   commentText: {
     padding: 12,
-    borderRadius: 8,
-    color: '#24211f',
+    borderRadius: 14,
+    color: '#292929',
     backgroundColor: '#e8f6ed',
+    fontSize: 17.6,
     fontWeight: '800',
-    lineHeight: 20,
+    fontFamily: FONT.extra,
+    lineHeight: 24,
   },
   approveButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
-    borderRadius: 8,
-    backgroundColor: '#007434',
+    borderRadius: 10,
+    backgroundColor: '#0d803d',
   },
   approveText: {
     color: '#ffffff',
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   rejectButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: '#fff0ee',
     borderWidth: 1,
     borderColor: '#f0b6b0',
   },
   rejectText: {
     color: '#c83c31',
+    fontSize: 19.2,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   requestCard: {
     flexDirection: 'row',
     gap: 10,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e4e4df',
+    borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
   },
   requestPhoto: {
     width: 76,
     height: 76,
-    borderRadius: 7,
-    backgroundColor: '#f1f1ee',
+    borderRadius: 10,
+    backgroundColor: '#f8f8f8',
   },
   requestBody: {
     flex: 1,
@@ -1391,14 +1442,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   requestTitle: {
-    color: '#24211f',
-    fontSize: 16,
+    color: '#292929',
+    fontSize: 17.6,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   requestMeta: {
-    color: '#6f7885',
-    fontSize: 13,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
     fontWeight: '800',
+    fontFamily: FONT.extra,
   },
   statusBadge: {
     alignSelf: 'flex-start',
@@ -1407,18 +1460,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 14.4,
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
   emptyBox: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 160,
-    borderRadius: 8,
+    borderRadius: 14,
     backgroundColor: '#ffffff',
   },
   emptyTitle: {
-    color: '#6f7885',
+    color: 'rgba(0, 0, 0, 0.5)',
     fontWeight: '900',
+    fontFamily: FONT.black,
   },
 })
