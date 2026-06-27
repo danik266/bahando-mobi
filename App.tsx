@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -196,6 +197,9 @@ export default function App() {
   const [newEmpPin, setNewEmpPin] = useState('')
   const [addEmpError, setAddEmpError] = useState('')
 
+  const [formStep, setFormStep] = useState<'wizard' | 'details'>('wizard')
+  const [showPin, setShowPin] = useState(false)
+
   const selectedProduct = data.products.find((product) => product.id === form.productId)
   const selectedReason = data.reasons.find((reason) => reason.id === form.reasonId)
 
@@ -276,6 +280,8 @@ export default function App() {
     setSelectedIds([])
     setDetailRequestId('')
     setViewMode('create')
+    setFormStep('wizard')
+    setShowPin(false)
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -456,6 +462,7 @@ export default function App() {
       setAiResult(null)
       setFormMode('initial')
       setViewMode('mine')
+      setFormStep('wizard')
       Alert.alert('Готово', 'Заявка отправлена на проверку.')
     } catch (requestError) {
       Alert.alert(
@@ -599,55 +606,51 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
       >
-        <View style={styles.header}>
-          <BahandiLogo />
-          <Text style={styles.headerTitle}>SPISANDI</Text>
-        </View>
-
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
+        {!currentUser && (
+          <View style={styles.header}>
+            <BahandiLogo />
+            <Text style={styles.headerTitle}>SPISANDI</Text>
           </View>
-        ) : null}
+        )}
 
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={
-            <RefreshControl refreshing={isLoading} onRefresh={() => void loadData()} />
-          }
-        >
-          {!fontsLoaded || isLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator color="#0d803d" />
-              <Text style={styles.muted}>Загрузка...</Text>
-            </View>
-          ) : !currentUser ? (
-            <LoginScreen
-              loginName={loginName}
-              password={password}
-              authError={authError}
-              isSaving={isSaving}
-              onLoginNameChange={setLoginName}
-              onPasswordChange={setPassword}
-              onLogin={login}
-            />
-          ) : (
+            ) : (
             <>
-              <View style={styles.userSummary}>
-                <View style={styles.userSummaryText}>
-                  <Text style={styles.greenLabel}>Пользователь</Text>
-                  <Text style={styles.greenValue}>{currentUser.name}</Text>
+              {/* Green Header Banner */}
+              <ImageBackground
+                source={require('./assets/cover.png')}
+                style={styles.greenBannerContainer}
+                imageStyle={styles.greenBannerImage}
+              >
+                {/* Logo top row */}
+                <View style={styles.bannerLogoRow}>
+                  <BahandiLogo />
+                  <Text style={styles.bannerLogoText}>SPISANDI</Text>
                 </View>
-                <View style={styles.rolePill}>
-                  <Text style={styles.rolePillText}>
-                    {currentUser.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
-                  </Text>
-                </View>
-              </View>
 
-              <Pressable style={styles.logoutButton} onPress={logout}>
-                <Text style={styles.logoutText}>Выйти</Text>
-              </Pressable>
+                {/* User info row */}
+                <View style={styles.bannerUserRow}>
+                  <View style={styles.bannerAvatarCircle}>
+                    <Text style={styles.bannerAvatarEmoji}>👤</Text>
+                  </View>
+                  <View style={styles.bannerUserInfo}>
+                    <Text style={styles.bannerUserName}>{currentUser.name}</Text>
+                    <Text style={styles.bannerUserOutlet}>
+                      {data.outlets.find((o) => o.id === form.outletId)?.name || 'Bahandi'}
+                    </Text>
+                  </View>
+                  <View style={styles.bannerRolePill}>
+                    <Text style={styles.bannerRoleText}>
+                      {currentUser.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Logout action */}
+                <Pressable style={styles.bannerLogoutBtn} onPress={logout}>
+                  <Text style={styles.bannerLogoutIcon}>➜</Text>
+                  <Text style={styles.bannerLogoutText}>Выйти</Text>
+                </Pressable>
+              </ImageBackground>
 
               {currentUser.role === 'sender' ? (
                 <>
@@ -655,6 +658,7 @@ export default function App() {
                     <TabButton
                       active={viewMode === 'create'}
                       label="Списать"
+                      icon="📝"
                       onPress={() => setViewMode('create')}
                     />
                     <TabButton
@@ -682,13 +686,18 @@ export default function App() {
                       onAnalyze={analyzeCurrentPhoto}
                       onChoosePhoto={choosePhotoSource}
                       onSubmit={submitRequest}
+                      formStep={formStep}
+                      onFormStepChange={setFormStep}
                     />
                   ) : (
-                    <RequestList
-                      requests={myRequests}
-                      products={data.products}
-                      onSelect={(request) => setDetailRequestId(request.id)}
-                    />
+                    <>
+                      <Text style={styles.totalRequestsLabel}>Всего заявок: {myRequests.length}</Text>
+                      <RequestList
+                        requests={myRequests}
+                        products={data.products}
+                        onSelect={(request) => setDetailRequestId(request.id)}
+                      />
+                    </>
                   )}
                 </>
               ) : (
@@ -706,16 +715,19 @@ export default function App() {
                     <TabButton
                       active={viewMode === 'review'}
                       label="Проверка"
+                      icon="🔍"
                       onPress={() => setViewMode('review')}
                     />
                     <TabButton
                       active={viewMode === 'history'}
                       label="История"
+                      icon="📜"
                       onPress={() => setViewMode('history')}
                     />
                     <TabButton
                       active={viewMode === 'stats'}
                       label="Статистика"
+                      icon="📊"
                       onPress={() => setViewMode('stats')}
                     />
                   </View>
@@ -806,49 +818,95 @@ function LoginScreen({
   onPasswordChange: (value: string) => void
   onLogin: () => void
 }) {
+  const [showPin, setShowPin] = useState(false)
+
   return (
-    <View style={styles.loginPanel}>
-      <Text style={styles.loginTitle}>Авторизация</Text>
-      <Text style={styles.loginCopy}>
-        Войдите личным логином и пин-кодом.
+    <View style={styles.loginContainer}>
+      <Text style={styles.loginWelcomeTitle}>Добро пожаловать!</Text>
+      <Text style={styles.loginWelcomeSubtitle}>
+        Войдите личным логином{"\n"}и пин-кодом.
       </Text>
 
-      <Text style={styles.label}>Логин</Text>
-      <TextInput
-        value={loginName}
-        onChangeText={onLoginNameChange}
-        placeholder="aibek"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.input}
-      />
+      {/* Login input box */}
+      <Text style={styles.loginFieldLabel}>Логин</Text>
+      <View style={styles.loginInputWrapper}>
+        <Text style={styles.loginInputIcon}>👤</Text>
+        <TextInput
+          value={loginName}
+          onChangeText={onLoginNameChange}
+          placeholder="aibek"
+          placeholderTextColor="#999"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.loginTextInput}
+        />
+        {loginName.length > 0 && (
+          <Pressable onPress={() => onLoginNameChange('')} style={styles.loginInputClearBtn}>
+            <Text style={styles.loginInputClearText}>✕</Text>
+          </Pressable>
+        )}
+      </View>
 
-      <Text style={styles.label}>Пин-код</Text>
-      <TextInput
-        value={password}
-        onChangeText={onPasswordChange}
-        placeholder="1234"
-        keyboardType="numeric"
-        secureTextEntry
-        style={styles.input}
-      />
-
-      <Text style={styles.hashText}>aibek/1234 · aigerim/9999 · manager/0000 · madina/2222 · timur/3333</Text>
+      {/* PIN code input box */}
+      <Text style={styles.loginFieldLabel}>Пин-код</Text>
+      <View style={styles.loginInputWrapper}>
+        <Text style={styles.loginInputIcon}>🔒</Text>
+        <TextInput
+          value={password}
+          onChangeText={onPasswordChange}
+          placeholder="••••"
+          placeholderTextColor="#999"
+          keyboardType="numeric"
+          secureTextEntry={!showPin}
+          style={styles.loginTextInput}
+        />
+        <Pressable onPress={() => setShowPin(!showPin)} style={styles.loginInputEyeBtn}>
+          <Text style={styles.loginInputEyeText}>{showPin ? '👁️' : '👁️‍🗨️'}</Text>
+        </Pressable>
+      </View>
 
       {authError ? (
-        <View style={styles.errorBoxInline}>
-          <Text style={styles.errorText}>{authError}</Text>
+        <View style={styles.loginErrorBoxInline}>
+          <Text style={styles.loginErrorText}>{authError}</Text>
         </View>
       ) : null}
 
+      {/* Submit Button */}
       <Pressable
         disabled={isSaving}
-        style={[styles.submitButton, isSaving && styles.disabledButton]}
+        style={[styles.loginSubmitButton, isSaving && styles.disabledButton]}
         onPress={onLogin}
       >
-        {isSaving ? <ActivityIndicator color="#ffffff" /> : null}
-        <Text style={styles.submitText}>Войти</Text>
+        <Text style={styles.loginSubmitText}>Войти</Text>
+        <View style={styles.loginSubmitArrowCircle}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#006c35" />
+          ) : (
+            <Text style={styles.loginSubmitArrowText}>➔</Text>
+          )}
+        </View>
       </Pressable>
+
+      {/* Demo Accounts Panel */}
+      <View style={styles.demoPanel}>
+        <View style={styles.demoHeaderRow}>
+          <Text style={styles.demoTitle}>Демо-аккаунт</Text>
+          <Text style={styles.demoInfoIcon}>ℹ️</Text>
+        </View>
+        <Text style={styles.demoBodyText}>
+          aibek/1234  ·  aigerim/9999{"\n"}
+          manager/0000  ·  madina/2222{"\n"}
+          timur/3333
+        </Text>
+      </View>
+
+      {/* Footer message */}
+      <View style={styles.loginFooter}>
+        <Text style={styles.loginFooterIcon}>🛡️</Text>
+        <Text style={styles.loginFooterText}>
+          По вопросам доступа{"\n"}обратитесь к администратору.
+        </Text>
+      </View>
     </View>
   )
 }
@@ -870,6 +928,8 @@ function SenderForm({
   onAnalyze,
   onChoosePhoto,
   onSubmit,
+  formStep,
+  onFormStepChange,
 }: {
   currentUser: Employee | null
   data: BootstrapPayload
@@ -887,147 +947,197 @@ function SenderForm({
   onAnalyze: () => void
   onChoosePhoto: () => void
   onSubmit: () => void
+  formStep: 'wizard' | 'details'
+  onFormStepChange: (step: 'wizard' | 'details') => void
 }) {
   const progress = calculateFormProgress(form, selectedReason)
   const quantity = Number(form.quantity)
   const reasonName = selectedReason?.name.toLowerCase() ?? ''
   const needsExpiry = reasonName.includes('срок') || reasonName.includes('проср')
   const needsDamage = reasonName.includes('повреж') || reasonName.includes('порч')
+  
+  const cost = selectedProduct ? selectedProduct.cost : 0
+  const totalCostAmount = selectedProduct && quantity > 0 ? quantity * selectedProduct.cost : 0
+
+  const activeOutletName = data.outlets.find((o) => o.id === form.outletId)?.name || 'Bahandi'
+
+  const canProceedToDetails = form.photoUrl && aiHint.trim().length > 0
   const canSubmit = progress >= 100 && !isSaving
 
-  const filteredOutlets = useMemo(() => {
-    if (currentUser?.city) {
-      return data.outlets.filter((o) => o.city === currentUser.city)
-    }
-    return data.outlets
-  }, [data.outlets, currentUser])
+  if (formStep === 'wizard') {
+    return (
+      <View style={styles.wizardContainer}>
+        {/* Progress Bar Widget */}
+        <View style={styles.progressWidget}>
+          <View style={styles.progressTextRow}>
+            <Text style={styles.progressTitle}>Заполнение заявки</Text>
+            <Text style={styles.progressPercent}>{progress}%</Text>
+          </View>
+          <View style={styles.progressOuterBar}>
+            <View style={[styles.progressInnerBar, { width: `${progress}%` }]} />
+          </View>
+          <Text style={styles.progressLabelSub}>Заполните все обязательные поля</Text>
+        </View>
 
-  return (
-    <View style={styles.form}>
-      <FormProgress percent={progress} />
+        {/* New Request Navigation Card */}
+        <Pressable onPress={() => onFormStepChange('details')} style={styles.newRequestNavCard}>
+          <View style={styles.newRequestNavIconBg}>
+            <Text style={styles.newRequestNavIconEmoji}>📄</Text>
+            <Text style={styles.newRequestNavIconPlus}>+</Text>
+          </View>
+          <View style={styles.newRequestNavContent}>
+            <Text style={styles.newRequestNavTitle}>Новая заявка на списание</Text>
+            <Text style={styles.newRequestNavSubtitle}>{activeOutletName}</Text>
+          </View>
+          <Text style={styles.newRequestNavChevron}>➔</Text>
+        </Pressable>
 
-      <View style={styles.panelHeader}>
-        <Text style={styles.panelTitle}>Новая заявка на списание</Text>
-        <Text style={styles.panelDetail}>
-          {filteredOutlets.length === 1 ? filteredOutlets[0]?.name : `${filteredOutlets.length} точек`}
-        </Text>
-      </View>
+        {/* Reason / Cause text input (AI prompt) */}
+        <Text style={styles.wizardFieldLabel}>Причина списания</Text>
+        <TextInput
+          value={aiHint}
+          onChangeText={onHintChange}
+          placeholder="Например: помялось, истек срок, упало"
+          placeholderTextColor="#999"
+          style={styles.wizardTextInput}
+        />
 
-      <Text style={styles.label}>Что случилось?</Text>
-      <TextInput
-        value={aiHint}
-        onChangeText={onHintChange}
-        placeholder="Например: помялось, истек срок, упало"
-        style={styles.input}
-      />
-
-      <View style={styles.photoBox}>
-        {form.photoUrl ? (
-          <Image source={{ uri: form.photoUrl }} style={styles.photo} />
-        ) : (
-          <Text style={styles.photoPlaceholder}>Фото продукции</Text>
-        )}
-      </View>
-
-      <SecondaryButton
-        label={form.photoUrl ? 'Заменить фото' : 'Добавить фото'}
-        onPress={onChoosePhoto}
-      />
-
-      {form.photoHash ? <Text style={styles.hashText}>{form.photoHash}</Text> : null}
-
-      {formMode === 'initial' ? (
-        <View style={styles.wizardBox}>
-          <Pressable
-            disabled={isAnalyzing || !form.photoUrl}
-            style={[
-              styles.submitButton,
-              (isAnalyzing || !form.photoUrl) && styles.disabledButton,
-            ]}
-            onPress={onAnalyze}
-          >
-            {isAnalyzing ? <ActivityIndicator color="#ffffff" /> : null}
-            <Text style={styles.submitText}>
-              {isAnalyzing ? 'Анализируем...' : 'Сгенерировать с ИИ'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => onFormModeChange('filling')}
-          >
-            <Text style={styles.secondaryText}>Заполнить вручную</Text>
+        {/* Photo selection section */}
+        <Text style={styles.wizardFieldLabel}>Фото товара / продукта</Text>
+        <View style={styles.photoUploadRow}>
+          <View style={styles.photoUploadPreviewBox}>
+            {form.photoUrl ? (
+              <Image source={{ uri: form.photoUrl }} style={styles.photoUploadPreviewImage} />
+            ) : (
+              <Text style={styles.photoUploadPreviewPlaceholder}>Нет фото</Text>
+            )}
+          </View>
+          <Pressable onPress={onChoosePhoto} style={styles.photoUploadButton}>
+            <Text style={styles.photoUploadButtonCamera}>📷</Text>
+            <Text style={styles.photoUploadButtonText}>Добавить фото</Text>
+            <View style={styles.photoUploadPlusBadge}>
+              <Text style={styles.photoUploadPlusText}>+</Text>
+            </View>
           </Pressable>
         </View>
-      ) : (
-        <>
-          {aiResult ? <AiResultCard result={aiResult} /> : null}
 
-      <Text style={styles.label}>Торговая точка</Text>
-      <ChipGrid
-        items={filteredOutlets}
-        value={form.outletId}
-        getLabel={(item) => item.name}
-        onChange={(value) => onSetField('outletId', value)}
-      />
+        {/* Proceed Button */}
+        <Pressable
+          disabled={!canProceedToDetails}
+          style={[styles.wizardProceedBtn, !canProceedToDetails && styles.disabledButton]}
+          onPress={() => onFormStepChange('details')}
+        >
+          <Text style={styles.wizardProceedText}>Продолжить оформление</Text>
+          <View style={styles.wizardProceedArrowCircle}>
+            <Text style={styles.wizardProceedArrowText}>➔</Text>
+          </View>
+        </Pressable>
+      </View>
+    )
+  }
 
-      <Text style={styles.label}>Продукт</Text>
+  // Details form step (Step 2)
+  return (
+    <View style={styles.detailsContainer}>
+      {/* Back Header with logo */}
+      <View style={styles.detailsHeader}>
+        <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
+          <Text style={styles.detailsBackText}>←</Text>
+        </Pressable>
+        <View style={styles.detailsHeaderLogoContainer}>
+          <BahandiLogo />
+          <Text style={styles.detailsHeaderTitle}>SPISANDI</Text>
+        </View>
+      </View>
+
+      {/* Product search input */}
+      <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
       <ProductSearch
         products={data.products}
         value={form.productId}
-        onChange={(value) => onSetField('productId', value)}
+        onChange={(val) => onSetField('productId', val)}
       />
 
-      <Text style={styles.label}>Количество</Text>
-      <View style={styles.quantityRow}>
+      {/* Quantity entry */}
+      <Text style={styles.wizardFieldLabel}>Количество</Text>
+      <View style={styles.detailsQuantityRow}>
         <TextInput
           keyboardType="decimal-pad"
           value={form.quantity}
           onChangeText={(value) => onSetField('quantity', value)}
           placeholder="0"
-          style={[styles.input, styles.quantityInput]}
+          style={styles.detailsQuantityInput}
         />
-        <View style={styles.unitBadge}>
-          <Text style={styles.unitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
+        <View style={styles.detailsUnitBadge}>
+          <Text style={styles.detailsUnitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
         </View>
       </View>
 
-      <Text style={styles.label}>Причина</Text>
-      <ChipGrid
-        items={data.reasons}
-        value={form.reasonId}
-        getLabel={(item) => item.name}
-        onChange={(value) => onSetField('reasonId', value)}
-      />
+      {/* Reason selector chips */}
+      <Text style={styles.wizardFieldLabel}>Причина списания</Text>
+      <View style={styles.reasonsChipsContainer}>
+        {data.reasons.map((item) => {
+          const isSelected = form.reasonId === item.id
+          return (
+            <Pressable
+              key={item.id}
+              style={[
+                styles.reasonChipItem,
+                isSelected && styles.reasonChipItemActive,
+              ]}
+              onPress={() => onSetField('reasonId', item.id)}
+            >
+              <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
+                {item.name}
+              </Text>
+              {isSelected && <Text style={styles.reasonChipCheck}>✓</Text>}
+            </Pressable>
+          )
+        })}
+      </View>
 
-      <CostSummary product={selectedProduct} quantity={quantity} />
+      {/* Cost grid side-by-side cards */}
+      <View style={styles.costCardsRow}>
+        <View style={styles.costCard}>
+          <Text style={styles.costCardLabel}>Себестоимость</Text>
+          <Text style={styles.costCardValue}>{formatMoney(cost)}</Text>
+        </View>
+        <View style={styles.costCard}>
+          <Text style={styles.costCardLabel}>Итого к списанию</Text>
+          <Text style={[styles.costCardValue, { color: '#097a3a' }]}>
+            {formatMoney(totalCostAmount)}
+          </Text>
+        </View>
+      </View>
 
-      {needsExpiry ? (
-        <View style={styles.inputGrid}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Дата производства</Text>
+      {/* Dates fields if required */}
+      {needsExpiry && (
+        <View style={styles.expiryGrid}>
+          <View style={styles.expiryInputGroup}>
+            <Text style={styles.wizardFieldLabel}>Дата производства</Text>
             <TextInput
               value={form.productionDate}
               onChangeText={(value) => onSetField('productionDate', value)}
               placeholder="2026-06-25"
-              style={styles.input}
+              style={styles.wizardTextInput}
             />
           </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Годен до</Text>
+          <View style={styles.expiryInputGroup}>
+            <Text style={styles.wizardFieldLabel}>Годен до</Text>
             <TextInput
               value={form.expiryDate}
               onChangeText={(value) => onSetField('expiryDate', value)}
               placeholder="2026-06-27"
-              style={styles.input}
+              style={styles.wizardTextInput}
             />
           </View>
         </View>
-      ) : null}
+      )}
 
-      {needsDamage ? (
-        <>
-          <Text style={styles.label}>Вид повреждения</Text>
+      {/* Damage fields if required */}
+      {needsDamage && (
+        <View style={styles.damageBox}>
+          <Text style={styles.wizardFieldLabel}>Вид повреждения</Text>
           <ChipGrid
             items={[
               { id: 'Помято' },
@@ -1040,7 +1150,7 @@ function SenderForm({
             onChange={(value) => onSetField('damageType', value)}
           />
 
-          <Text style={styles.label}>Когда обнаружено</Text>
+          <Text style={styles.wizardFieldLabel}>Когда обнаружено</Text>
           <ChipGrid
             items={[
               { id: 'При приемке' },
@@ -1052,62 +1162,110 @@ function SenderForm({
             getLabel={(item) => item.id}
             onChange={(value) => onSetField('damageDiscoveredAt', value)}
           />
-        </>
-      ) : null}
+        </View>
+      )}
 
-      <View style={styles.segmented}>
-        <TabButton
-          active={form.type === 'without_deduction'}
-          label="Без удержания"
+      {/* Deduction Toggle segmented container */}
+      <View style={styles.deductionToggleSegmented}>
+        <Pressable
+          style={[
+            styles.deductionToggleBtn,
+            form.type === 'without_deduction' && styles.deductionToggleBtnActive,
+          ]}
           onPress={() => onSetField('type', 'without_deduction')}
-        />
-        <TabButton
-          active={form.type === 'with_deduction'}
-          label="С удержанием"
+        >
+          <Text
+            style={[
+              styles.deductionToggleText,
+              form.type === 'without_deduction' && styles.deductionToggleTextActive,
+            ]}
+          >
+            Без удержания
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.deductionToggleBtn,
+            form.type === 'with_deduction' && styles.deductionToggleBtnActive,
+          ]}
           onPress={() => onSetField('type', 'with_deduction')}
-        />
+        >
+          <Text
+            style={[
+              styles.deductionToggleText,
+              form.type === 'with_deduction' && styles.deductionToggleTextActive,
+            ]}
+          >
+            С удержанием
+          </Text>
+        </Pressable>
       </View>
 
-      {form.type === 'with_deduction' ? (
-        <>
-          <Text style={styles.label}>Сотрудник для удержания</Text>
-          <ChipGrid
-            items={data.employees.filter((employee) => employee.role === 'sender')}
-            value={form.deductionEmployeeId}
-            getLabel={(item) => item.name}
-            onChange={(value) => onSetField('deductionEmployeeId', value)}
-          />
+      {/* Deduction items */}
+      {form.type === 'with_deduction' && (
+        <View style={styles.deductionFieldsContainer}>
+          <Text style={styles.wizardFieldLabel}>Сотрудник для удержания</Text>
+          <View style={styles.deductionEmployeeSelector}>
+            {form.deductionEmployeeId ? (
+              <View style={styles.deductionEmployeeChip}>
+                <Text style={styles.deductionEmployeeChipIcon}>👤</Text>
+                <Text style={styles.deductionEmployeeChipText}>
+                  {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
+                </Text>
+                <Pressable
+                  onPress={() => onSetField('deductionEmployeeId', '')}
+                  style={styles.deductionEmployeeChipClear}
+                >
+                  <Text style={styles.deductionEmployeeChipClearText}>✕</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <ChipGrid
+                items={data.employees.filter((employee) => employee.role === 'sender')}
+                value={form.deductionEmployeeId}
+                getLabel={(item) => item.name}
+                onChange={(value) => onSetField('deductionEmployeeId', value)}
+              />
+            )}
+          </View>
 
-
-          <Text style={styles.label}>Причина удержания</Text>
+          <Text style={styles.wizardFieldLabel}>Причина удержания</Text>
           <TextInput
             value={form.deductionReason}
             onChangeText={(value) => onSetField('deductionReason', value)}
             placeholder="Например: халатность"
-            style={styles.input}
+            placeholderTextColor="#999"
+            style={styles.wizardTextInput}
           />
-        </>
-      ) : null}
+        </View>
+      )}
 
-      <Text style={styles.label}>Комментарий</Text>
+      {/* General Comment */}
+      <Text style={styles.wizardFieldLabel}>Комментарий</Text>
       <TextInput
         value={form.comment}
         onChangeText={(value) => onSetField('comment', value)}
         placeholder="Например: булочки повреждены при приемке"
+        placeholderTextColor="#999"
         multiline
-        style={[styles.input, styles.commentInput]}
+        style={styles.detailsCommentInput}
       />
 
+      {/* Submit Button */}
       <Pressable
         disabled={!canSubmit}
-        style={[styles.submitButton, !canSubmit && styles.disabledButton]}
+        style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
         onPress={onSubmit}
       >
-        {isSaving ? <ActivityIndicator color="#ffffff" /> : null}
-        <Text style={styles.submitText}>Отправить на проверку</Text>
+        <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
+        <View style={styles.detailsSubmitIconBg}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Text style={styles.detailsSubmitIconEmoji}>✈️</Text>
+          )}
+        </View>
       </Pressable>
-        </>
-      )}
     </View>
   )
 }
@@ -1401,13 +1559,20 @@ function TabButton({
   active,
   label,
   onPress,
+  icon,
 }: {
   active: boolean
   label: string
   onPress: () => void
+  icon?: string
 }) {
   return (
     <Pressable style={[styles.tabButton, active && styles.tabButtonActive]} onPress={onPress}>
+      {icon ? (
+        <Text style={[styles.tabText, active && styles.tabTextActive, { marginRight: 4 }]}>
+          {icon}
+        </Text>
+      ) : null}
       <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
     </Pressable>
   )
@@ -1527,6 +1692,18 @@ function RequestCard({
   productName: string
   onPress?: () => void
 }) {
+  const formattedDate = useMemo(() => {
+    try {
+      const d = new Date(request.createdAt)
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      return `${day}.${month}.${year}`
+    } catch {
+      return request.createdAt
+    }
+  }, [request.createdAt])
+
   return (
     <Pressable
       disabled={!onPress}
@@ -1535,18 +1712,21 @@ function RequestCard({
     >
       <Image source={{ uri: request.photoUrl }} style={styles.requestPhoto} />
       <View style={styles.requestBody}>
-        <Text style={styles.requestTitle}>
+        <Text style={styles.requestTitle} numberOfLines={1}>
           #{request.id} · {productName}
         </Text>
         <Text style={styles.requestMeta}>
-          {request.quantity} {request.unit} · {new Date(request.createdAt).toLocaleDateString('ru-RU')}
+          {request.quantity} {request.unit} · {formattedDate}
         </Text>
-        <View style={[styles.statusBadge, { backgroundColor: `${statusColor[request.status]}18` }]}>
-          <Text style={[styles.statusText, { color: statusColor[request.status] }]}>
-            {statusCopy[request.status]}
-          </Text>
+        <View style={styles.requestStatusBadgeRow}>
+          <View style={[styles.statusBadge, { backgroundColor: `${statusColor[request.status]}10`, borderColor: `${statusColor[request.status]}30` }]}>
+            <Text style={[styles.statusText, { color: statusColor[request.status] }]}>
+              {statusCopy[request.status]}
+            </Text>
+          </View>
         </View>
       </View>
+      <Text style={styles.requestChevron}>❯</Text>
     </Pressable>
   )
 }
@@ -3270,5 +3450,708 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 14,
     paddingVertical: 12,
+  },
+  loginContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 36,
+    paddingBottom: 24,
+  },
+  loginWelcomeTitle: {
+    fontSize: 28,
+    fontFamily: FONT.bold,
+    color: '#006c35',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  loginWelcomeSubtitle: {
+    fontSize: 16,
+    fontFamily: FONT.regular,
+    color: '#555555',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 22,
+  },
+  loginFieldLabel: {
+    fontSize: 14,
+    fontFamily: FONT.semi,
+    color: '#292929',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  loginInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+  },
+  loginInputIcon: {
+    fontSize: 18,
+    marginRight: 12,
+    color: '#718096',
+  },
+  loginTextInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 16,
+    color: '#1a202c',
+    fontFamily: FONT.regular,
+  },
+  loginInputClearBtn: {
+    padding: 6,
+  },
+  loginInputClearText: {
+    color: '#a0aec0',
+    fontSize: 14,
+  },
+  loginInputEyeBtn: {
+    padding: 6,
+  },
+  loginInputEyeText: {
+    fontSize: 18,
+  },
+  loginErrorBoxInline: {
+    marginTop: 12,
+    backgroundColor: '#fff5f5',
+    borderColor: '#fed7d7',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  loginErrorText: {
+    color: '#c53030',
+    fontSize: 14,
+    fontFamily: FONT.regular,
+  },
+  loginSubmitButton: {
+    flexDirection: 'row',
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: '#006c35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 28,
+    paddingHorizontal: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  loginSubmitText: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#ffffff',
+    fontSize: 17,
+    fontFamily: FONT.bold,
+    marginLeft: 28,
+  },
+  loginSubmitArrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginSubmitArrowText: {
+    color: '#006c35',
+    fontSize: 16,
+    fontFamily: FONT.bold,
+  },
+  demoPanel: {
+    backgroundColor: '#e8f6ed',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#d2eedb',
+    marginTop: 32,
+  },
+  demoHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  demoTitle: {
+    fontSize: 15,
+    fontFamily: FONT.bold,
+    color: '#006c35',
+  },
+  demoInfoIcon: {
+    fontSize: 16,
+    color: '#006c35',
+  },
+  demoBodyText: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#2e7d32',
+    lineHeight: 20,
+  },
+  loginFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 48,
+    marginBottom: 20,
+    gap: 8,
+  },
+  loginFooterIcon: {
+    fontSize: 18,
+    color: '#718096',
+  },
+  loginFooterText: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#718096',
+    textAlign: 'center',
+  },
+  greenBannerContainer: {
+    padding: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  greenBannerImage: {
+    borderRadius: 16,
+  },
+  bannerLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+  },
+  bannerLogoText: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+    color: '#ffffff',
+  },
+  bannerUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  bannerAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerAvatarEmoji: {
+    fontSize: 22,
+  },
+  bannerUserInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  bannerUserName: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+    color: '#ffffff',
+  },
+  bannerUserOutlet: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: '#e2e8f0',
+  },
+  bannerRolePill: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: '#ffffff30',
+  },
+  bannerRoleText: {
+    fontSize: 12,
+    fontFamily: FONT.semi,
+    color: '#ffffff',
+  },
+  bannerLogoutBtn: {
+    flexDirection: 'row',
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  bannerLogoutIcon: {
+    fontSize: 15,
+    color: '#292929',
+  },
+  bannerLogoutText: {
+    fontSize: 14,
+    fontFamily: FONT.semi,
+    color: '#292929',
+  },
+  totalRequestsLabel: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#666',
+    marginHorizontal: 4,
+    marginBottom: 8,
+  },
+  wizardContainer: {
+    gap: 16,
+    paddingBottom: 24,
+  },
+  progressWidget: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+  },
+  progressTextRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressTitle: {
+    fontSize: 15,
+    fontFamily: FONT.semi,
+    color: '#2d3748',
+  },
+  progressPercent: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: '#48bb78',
+  },
+  progressOuterBar: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#edf2f7',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressInnerBar: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: '#48bb78',
+  },
+  progressLabelSub: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#a0aec0',
+  },
+  newRequestNavCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffaf5',
+    borderColor: '#ffebdb',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+  },
+  newRequestNavIconBg: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#fff0e5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginRight: 12,
+  },
+  newRequestNavIconEmoji: {
+    fontSize: 20,
+  },
+  newRequestNavIconPlus: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#ff6b00',
+  },
+  newRequestNavContent: {
+    flex: 1,
+    gap: 2,
+  },
+  newRequestNavTitle: {
+    fontSize: 15,
+    fontFamily: FONT.bold,
+    color: '#2d3748',
+  },
+  newRequestNavSubtitle: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: '#a0aec0',
+  },
+  newRequestNavChevron: {
+    fontSize: 16,
+    color: '#dd6b20',
+  },
+  wizardFieldLabel: {
+    fontSize: 14,
+    fontFamily: FONT.semi,
+    color: '#292929',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  wizardTextInput: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    fontSize: 15,
+    fontFamily: FONT.regular,
+    color: '#2d3748',
+  },
+  photoUploadRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  photoUploadPreviewBox: {
+    flex: 1,
+    height: 100,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoUploadPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoUploadPreviewPlaceholder: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#a0aec0',
+  },
+  photoUploadButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    position: 'relative',
+  },
+  photoUploadButtonCamera: {
+    fontSize: 24,
+  },
+  photoUploadButtonText: {
+    fontSize: 10,
+    fontFamily: FONT.regular,
+    color: '#718096',
+    textAlign: 'center',
+  },
+  photoUploadPlusBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#48bb78',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoUploadPlusText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: 'bold',
+    lineHeight: 12,
+  },
+  wizardProceedBtn: {
+    flexDirection: 'row',
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: '#006c35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  wizardProceedText: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#ffffff',
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    marginLeft: 28,
+  },
+  wizardProceedArrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wizardProceedArrowText: {
+    color: '#006c35',
+    fontSize: 14,
+    fontFamily: FONT.bold,
+  },
+  detailsContainer: {
+    gap: 16,
+    paddingBottom: 24,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  detailsBackBtn: {
+    padding: 8,
+  },
+  detailsBackText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2d3748',
+  },
+  detailsHeaderLogoContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 28,
+    gap: 6,
+  },
+  detailsHeaderTitle: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: '#2d3748',
+  },
+  detailsQuantityRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  detailsQuantityInput: {
+    flex: 1,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontFamily: FONT.semi,
+    color: '#2d3748',
+  },
+  detailsUnitBadge: {
+    height: 52,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f7fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 64,
+  },
+  detailsUnitBadgeText: {
+    fontSize: 15,
+    fontFamily: FONT.semi,
+    color: '#718096',
+  },
+  reasonsChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 4,
+  },
+  reasonChipItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+  },
+  reasonChipItemActive: {
+    borderColor: '#48bb78',
+    backgroundColor: '#f0fff4',
+  },
+  reasonChipText: {
+    fontSize: 13.5,
+    fontFamily: FONT.regular,
+    color: '#4a5568',
+  },
+  reasonChipTextActive: {
+    fontFamily: FONT.semi,
+    color: '#22c55e',
+  },
+  reasonChipCheck: {
+    marginLeft: 6,
+    fontSize: 13,
+    color: '#22c55e',
+    fontWeight: 'bold',
+  },
+  costCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  costCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    gap: 4,
+  },
+  costCardLabel: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#718096',
+  },
+  costCardValue: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: '#2d3748',
+  },
+  expiryGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  expiryInputGroup: {
+    flex: 1,
+  },
+  damageBox: {
+    gap: 8,
+  },
+  deductionToggleSegmented: {
+    flexDirection: 'row',
+    backgroundColor: '#edf2f7',
+    borderRadius: 12,
+    padding: 2,
+    marginTop: 12,
+  },
+  deductionToggleBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  deductionToggleBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  deductionToggleText: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#718096',
+  },
+  deductionToggleTextActive: {
+    fontFamily: FONT.semi,
+    color: '#006c35',
+  },
+  deductionFieldsContainer: {
+    gap: 12,
+    marginTop: 8,
+  },
+  deductionEmployeeSelector: {
+    marginTop: 4,
+  },
+  deductionEmployeeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 45,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#c6f6d5',
+    backgroundColor: '#f0fff4',
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+  },
+  deductionEmployeeChipIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  deductionEmployeeChipText: {
+    fontSize: 14,
+    fontFamily: FONT.semi,
+    color: '#22c55e',
+    marginRight: 8,
+  },
+  deductionEmployeeChipClear: {
+    padding: 2,
+  },
+  deductionEmployeeChipClearText: {
+    fontSize: 14,
+    color: '#22c55e',
+    fontWeight: 'bold',
+  },
+  detailsCommentInput: {
+    height: 90,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    fontSize: 15,
+    fontFamily: FONT.regular,
+    color: '#2d3748',
+    textAlignVertical: 'top',
+  },
+  detailsSubmitBtn: {
+    flexDirection: 'row',
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: '#006c35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  detailsSubmitText: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#ffffff',
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    marginLeft: 28,
+  },
+  detailsSubmitIconBg: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsSubmitIconEmoji: {
+    fontSize: 18,
+    color: '#ffffff',
+  },
+  requestStatusBadgeRow: {
+    flexDirection: 'row',
+    marginTop: 6,
+  },
+  requestChevron: {
+    fontSize: 16,
+    color: '#a0aec0',
+    marginLeft: 8,
+    alignSelf: 'center',
   },
 })
