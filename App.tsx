@@ -613,7 +613,34 @@ export default function App() {
           </View>
         )}
 
-            ) : (
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={() => void loadData()} />
+          }
+        >
+          {!fontsLoaded || isLoading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color="#0d803d" />
+              <Text style={styles.muted}>Загрузка...</Text>
+            </View>
+          ) : !currentUser ? (
+            <LoginScreen
+              loginName={loginName}
+              password={password}
+              authError={authError}
+              isSaving={isSaving}
+              onLoginNameChange={setLoginName}
+              onPasswordChange={setPassword}
+              onLogin={login}
+            />
+          ) : (
             <>
               {/* Green Header Banner */}
               <ImageBackground
