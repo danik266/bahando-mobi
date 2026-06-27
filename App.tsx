@@ -1,8 +1,8 @@
 import { StatusBar } from 'expo-status-bar'
 import {
   GolosText_400Regular,
+  GolosText_600SemiBold,
   GolosText_700Bold,
-  GolosText_800ExtraBold,
   GolosText_900Black,
   useFonts,
 } from '@expo-google-fonts/golos-text'
@@ -49,7 +49,10 @@ type Employee = {
   id: string
   name: string
   role: Role
+  login: string
   outletId: string
+  outletIds: string[]
+  accessScope: 'assigned' | 'all'
   iikoEmployeeId: string
 }
 
@@ -112,8 +115,8 @@ const WEB_URL = normalizeBaseUrl(
 
 const FONT = {
   regular: 'GolosText_400Regular',
+  semi: 'GolosText_600SemiBold',
   bold: 'GolosText_700Bold',
-  extra: 'GolosText_800ExtraBold',
   black: 'GolosText_900Black',
 } as const
 
@@ -143,13 +146,13 @@ const statusColor: Record<Status, string> = {
 export default function App() {
   const [fontsLoaded] = useFonts({
     GolosText_400Regular,
+    GolosText_600SemiBold,
     GolosText_700Bold,
-    GolosText_800ExtraBold,
     GolosText_900Black,
   })
   const [currentUser, setCurrentUser] = useState<Employee | null>(null)
-  const [selectedLoginId, setSelectedLoginId] = useState('')
-  const [pinCode, setPinCode] = useState('')
+  const [loginName, setLoginName] = useState('')
+  const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [data, setData] = useState<BootstrapPayload>(emptyData)
   const [viewMode, setViewMode] = useState<ViewMode>('create')
@@ -175,25 +178,27 @@ export default function App() {
   const selectedRequest =
     data.requests.find((request) => request.id === selectedRequestId) ?? pendingRequests[0]
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (userOverride?: Employee | null) => {
     try {
       setError('')
-      const payload = await requestJson<BootstrapPayload>('/bootstrap')
+      const activeUser = userOverride === undefined ? currentUser : userOverride
+      const query = activeUser?.id ? `?userId=${encodeURIComponent(activeUser.id)}` : ''
+      const payload = await requestJson<BootstrapPayload>(`/bootstrap${query}`)
       setData(payload)
-      setSelectedLoginId(
-        (current) =>
-          current || payload.employees.find((employee) => employee.role === 'sender')?.id || '',
+      setSelectedRequestId((current) =>
+        payload.requests.some((request) => request.id === current)
+          ? current
+          : payload.requests[0]?.id || '',
       )
-      setSelectedRequestId((current) => current || payload.requests[0]?.id || '')
       setForm((current) =>
-        current.outletId ? current : createDefaultForm(payload, payload.employees[0]),
+        current.outletId ? current : createDefaultForm(payload, activeUser ?? payload.employees[0]),
       )
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Не удалось загрузить данные')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [currentUser])
 
   useEffect(() => {
     void loadData()
@@ -205,12 +210,16 @@ export default function App() {
       setAuthError('')
       const result = await requestJson<{ user: Employee; token: string }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ userId: selectedLoginId, pinCode }),
+        body: JSON.stringify({ login: loginName, password }),
       })
+      const query = `?userId=${encodeURIComponent(result.user.id)}`
+      const payload = await requestJson<BootstrapPayload>(`/bootstrap${query}`)
       setCurrentUser(result.user)
+      setData(payload)
       setViewMode(result.user.role === 'sender' ? 'create' : 'review')
-      setForm(createDefaultForm(data, result.user))
-      setPinCode('')
+      setSelectedRequestId(payload.requests[0]?.id || '')
+      setForm(createDefaultForm(payload, result.user))
+      setPassword('')
     } catch (requestError) {
       setAuthError(requestError instanceof Error ? requestError.message : 'Не удалось войти')
     } finally {
@@ -220,8 +229,10 @@ export default function App() {
 
   function logout() {
     setCurrentUser(null)
-    setPinCode('')
+    setPassword('')
     setAuthError('')
+    setData(emptyData)
+    setForm(createEmptyForm())
     setViewMode('create')
   }
 
@@ -407,7 +418,9 @@ export default function App() {
 
         <ScrollView
           contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={loadData} />}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={() => void loadData()} />
+          }
         >
           {!fontsLoaded || isLoading ? (
             <View style={styles.loadingBox}>
@@ -416,13 +429,12 @@ export default function App() {
             </View>
           ) : !currentUser ? (
             <LoginScreen
-              employees={data.employees}
-              selectedLoginId={selectedLoginId}
-              pinCode={pinCode}
+              loginName={loginName}
+              password={password}
               authError={authError}
               isSaving={isSaving}
-              onSelect={setSelectedLoginId}
-              onPinChange={setPinCode}
+              onLoginNameChange={setLoginName}
+              onPasswordChange={setPassword}
               onLogin={login}
             />
           ) : (
@@ -517,55 +529,49 @@ export default function App() {
 }
 
 function LoginScreen({
-  employees,
-  selectedLoginId,
-  pinCode,
+  loginName,
+  password,
   authError,
   isSaving,
-  onSelect,
-  onPinChange,
+  onLoginNameChange,
+  onPasswordChange,
   onLogin,
 }: {
-  employees: Employee[]
-  selectedLoginId: string
-  pinCode: string
+  loginName: string
+  password: string
   authError: string
   isSaving: boolean
-  onSelect: (id: string) => void
-  onPinChange: (value: string) => void
+  onLoginNameChange: (value: string) => void
+  onPasswordChange: (value: string) => void
   onLogin: () => void
 }) {
   return (
     <View style={styles.loginPanel}>
       <Text style={styles.loginTitle}>Авторизация</Text>
       <Text style={styles.loginCopy}>
-        Войдите сотрудником для создания заявки или проверяющим для контроля списаний.
+        Войдите личным логином. Доступ к точкам откроется по роли пользователя.
       </Text>
 
-      <View style={styles.chipGrid}>
-        {employees.map((employee) => (
-          <Pressable
-            key={employee.id}
-            style={[styles.loginUser, selectedLoginId === employee.id && styles.loginUserActive]}
-            onPress={() => onSelect(employee.id)}
-          >
-            <Text style={styles.loginUserName}>{employee.name}</Text>
-            <Text style={styles.loginUserRole}>
-              {employee.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.label}>PIN</Text>
+      <Text style={styles.label}>Логин</Text>
       <TextInput
-        value={pinCode}
-        onChangeText={onPinChange}
-        placeholder="1111 сотрудник, 9999 проверяющий"
-        keyboardType="number-pad"
+        value={loginName}
+        onChangeText={onLoginNameChange}
+        placeholder="aibek"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.input}
+      />
+
+      <Text style={styles.label}>Пароль</Text>
+      <TextInput
+        value={password}
+        onChangeText={onPasswordChange}
+        placeholder="demo123"
         secureTextEntry
         style={styles.input}
       />
+
+      <Text style={styles.hashText}>aibek/demo123 · aigerim/review123 · manager/manager123</Text>
 
       {authError ? (
         <View style={styles.errorBoxInline}>
@@ -927,13 +933,19 @@ function RequestCard({
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const fetchOptions: RequestInit = {
+    method: init?.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
       ...init?.headers,
     },
-    ...init,
-  })
+  }
+
+  if (init?.body !== undefined) {
+    fetchOptions.body = init.body
+  }
+
+  const response = await fetch(`${API_URL}${path}`, fetchOptions)
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null
@@ -948,7 +960,8 @@ function normalizeBaseUrl(value: string) {
 }
 
 function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState {
-  const outlet = data.outlets.find((item) => item.id === sender?.outletId) ?? data.outlets[0]
+  const preferredOutletId = sender?.outletIds?.[0] ?? sender?.outletId
+  const outlet = data.outlets.find((item) => item.id === preferredOutletId) ?? data.outlets[0]
   return {
     outletId: outlet?.id ?? '',
     productId: data.products[0]?.id ?? '',
@@ -1049,14 +1062,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: '#292929',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   headerSub: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   content: {
     gap: 14,
@@ -1072,8 +1085,8 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#c83c31',
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   userGrid: {
     gap: 8,
@@ -1088,14 +1101,14 @@ const styles = StyleSheet.create({
   greenLabel: {
     color: 'rgba(255,255,255,0.76)',
     fontSize: 14.4,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   greenValue: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   tabs: {
     flexDirection: 'row',
@@ -1122,8 +1135,8 @@ const styles = StyleSheet.create({
   },
   tabText: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   tabTextActive: {
     color: '#292929',
@@ -1135,8 +1148,8 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   loginPanel: {
     gap: 12,
@@ -1149,14 +1162,14 @@ const styles = StyleSheet.create({
   loginTitle: {
     color: '#292929',
     fontSize: 32,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   loginCopy: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 17.6,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
     lineHeight: 24,
   },
   loginUser: {
@@ -1176,14 +1189,14 @@ const styles = StyleSheet.create({
   },
   loginUserName: {
     color: '#292929',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   loginUserRole: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   errorBoxInline: {
     padding: 10,
@@ -1201,8 +1214,8 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#292929',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   form: {
     gap: 12,
@@ -1224,8 +1237,8 @@ const styles = StyleSheet.create({
   photoPlaceholder: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 17.6,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   actionRow: {
     flexDirection: 'row',
@@ -1243,8 +1256,8 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     color: '#292929',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   orangeButton: {
     alignItems: 'center',
@@ -1258,20 +1271,20 @@ const styles = StyleSheet.create({
   },
   orangeText: {
     color: '#ff5e12',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   hashText: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   label: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   chipGrid: {
     flexDirection: 'row',
@@ -1293,13 +1306,13 @@ const styles = StyleSheet.create({
   },
   chipText: {
     color: '#292929',
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   chipTextActive: {
     color: '#0d803d',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   inputGrid: {
     flexDirection: 'row',
@@ -1349,8 +1362,8 @@ const styles = StyleSheet.create({
   submitText: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   requestList: {
     gap: 10,
@@ -1372,14 +1385,14 @@ const styles = StyleSheet.create({
   reviewTitle: {
     color: '#292929',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   reviewInfo: {
     color: '#292929',
     fontSize: 17.6,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   commentText: {
     padding: 12,
@@ -1387,8 +1400,8 @@ const styles = StyleSheet.create({
     color: '#292929',
     backgroundColor: '#e8f6ed',
     fontSize: 17.6,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
     lineHeight: 24,
   },
   approveButton: {
@@ -1402,8 +1415,8 @@ const styles = StyleSheet.create({
   approveText: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   rejectButton: {
     flex: 1,
@@ -1418,8 +1431,8 @@ const styles = StyleSheet.create({
   rejectText: {
     color: '#c83c31',
     fontSize: 19.2,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   requestCard: {
     flexDirection: 'row',
@@ -1444,14 +1457,14 @@ const styles = StyleSheet.create({
   requestTitle: {
     color: '#292929',
     fontSize: 17.6,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   requestMeta: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '800',
-    fontFamily: FONT.extra,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   statusBadge: {
     alignSelf: 'flex-start',
@@ -1461,8 +1474,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 14.4,
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
   emptyBox: {
     alignItems: 'center',
@@ -1473,7 +1486,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontWeight: '900',
-    fontFamily: FONT.black,
+    fontWeight: '700',
+    fontFamily: FONT.bold,
   },
 })
