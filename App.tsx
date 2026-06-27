@@ -1136,16 +1136,26 @@ function SenderForm({
   // Details form step (Step 2)
   return (
     <View style={styles.detailsContainer}>
-      {/* Back Header with logo */}
-      <View style={styles.detailsHeader}>
-        <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
-          <Text style={styles.detailsBackText}>←</Text>
-        </Pressable>
-        <View style={styles.detailsHeaderLogoContainer}>
-          <BahandiLogo />
-          <Text style={styles.detailsHeaderTitle}>SPISANDI</Text>
-        </View>
-      </View>
+      {/* Back button only */}
+      <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
+        <Text style={styles.detailsBackText}>{'<-'} Назад</Text>
+      </Pressable>
+
+      {/* Photo upload — mandatory for both modes */}
+      <Text style={styles.wizardFieldLabel}>Фото товара <Text style={{ color: '#e53e3e' }}>*</Text></Text>
+      <Pressable onPress={onChoosePhoto} style={styles.detailsPhotoBlock}>
+        {form.photoUrl ? (
+          <Image source={{ uri: form.photoUrl }} style={styles.detailsPhotoImage} />
+        ) : (
+          <View style={styles.detailsPhotoEmpty}>
+            <View style={styles.detailsPhotoCameraBox}>
+              <View style={styles.aiCameraBody} />
+              <View style={styles.aiCameraLens} />
+            </View>
+            <Text style={styles.detailsPhotoEmptyText}>Нажмите, чтобы добавить фото</Text>
+          </View>
+        )}
+      </Pressable>
 
       {/* Product search input */}
       <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
@@ -1187,7 +1197,9 @@ function SenderForm({
               <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
                 {item.name}
               </Text>
-              {isSelected && <Text style={styles.reasonChipCheck}>ok</Text>}
+              {isSelected && (
+                <View style={styles.reasonChipCheckDot} />
+              )}
             </Pressable>
           )
         })}
@@ -4184,35 +4196,44 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingBottom: 24,
   },
-  detailsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    borderBottomWidth: 1,
-    borderBottomColor: '#edf2f7',
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
   detailsBackBtn: {
-    padding: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    alignSelf: 'flex-start',
   },
   detailsBackText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2d3748',
+    fontSize: 15,
+    fontFamily: FONT.semi,
+    color: '#0d803d',
   },
-  detailsHeaderLogoContainer: {
+  detailsPhotoBlock: {
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  detailsPhotoImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  detailsPhotoEmpty: {
     flex: 1,
-    flexDirection: 'row',
+    backgroundColor: '#f7f8fa',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 28,
-    gap: 6,
+    gap: 10,
   },
-  detailsHeaderTitle: {
-    fontSize: 16,
-    fontFamily: FONT.bold,
-    color: '#2d3748',
+  detailsPhotoCameraBox: {
+    alignItems: 'center',
+  },
+  detailsPhotoEmptyText: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#a0aec0',
   },
   detailsQuantityRow: {
     flexDirection: 'row',
@@ -4280,6 +4301,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#22c55e',
     fontWeight: 'bold',
+  },
+  reasonChipCheckDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+    marginLeft: 6,
   },
   costCardsRow: {
     flexDirection: 'row',
