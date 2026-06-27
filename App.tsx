@@ -657,7 +657,7 @@ export default function App() {
                 {/* User info row */}
                 <View style={styles.bannerUserRow}>
                   <View style={styles.bannerAvatarCircle}>
-                    <Text style={styles.bannerAvatarEmoji}>👤</Text>
+                    <Text style={styles.bannerAvatarEmoji}>U</Text>
                   </View>
                   <View style={styles.bannerUserInfo}>
                     <Text style={styles.bannerUserName}>{currentUser.name}</Text>
@@ -674,7 +674,7 @@ export default function App() {
 
                 {/* Logout action */}
                 <Pressable style={styles.bannerLogoutBtn} onPress={logout}>
-                  <Text style={styles.bannerLogoutIcon}>➜</Text>
+                  <Text style={styles.bannerLogoutIcon}>{'->'}</Text>
                   <Text style={styles.bannerLogoutText}>Выйти</Text>
                 </Pressable>
               </ImageBackground>
@@ -685,7 +685,6 @@ export default function App() {
                     <TabButton
                       active={viewMode === 'create'}
                       label="Списать"
-                      icon="📝"
                       onPress={() => setViewMode('create')}
                     />
                     <TabButton
@@ -742,19 +741,16 @@ export default function App() {
                     <TabButton
                       active={viewMode === 'review'}
                       label="Проверка"
-                      icon="🔍"
                       onPress={() => setViewMode('review')}
                     />
                     <TabButton
                       active={viewMode === 'history'}
                       label="История"
-                      icon="📜"
                       onPress={() => setViewMode('history')}
                     />
                     <TabButton
                       active={viewMode === 'stats'}
                       label="Статистика"
-                      icon="📊"
                       onPress={() => setViewMode('stats')}
                     />
                   </View>
@@ -857,7 +853,7 @@ function LoginScreen({
       {/* Login input box */}
       <Text style={styles.loginFieldLabel}>Логин</Text>
       <View style={styles.loginInputWrapper}>
-        <Text style={styles.loginInputIcon}>👤</Text>
+        <Text style={styles.loginInputIcon}>@</Text>
         <TextInput
           value={loginName}
           onChangeText={onLoginNameChange}
@@ -869,7 +865,7 @@ function LoginScreen({
         />
         {loginName.length > 0 && (
           <Pressable onPress={() => onLoginNameChange('')} style={styles.loginInputClearBtn}>
-            <Text style={styles.loginInputClearText}>✕</Text>
+            <Text style={styles.loginInputClearText}>x</Text>
           </Pressable>
         )}
       </View>
@@ -877,7 +873,7 @@ function LoginScreen({
       {/* PIN code input box */}
       <Text style={styles.loginFieldLabel}>Пин-код</Text>
       <View style={styles.loginInputWrapper}>
-        <Text style={styles.loginInputIcon}>🔒</Text>
+        <Text style={styles.loginInputIcon}>*</Text>
         <TextInput
           value={password}
           onChangeText={onPasswordChange}
@@ -888,7 +884,7 @@ function LoginScreen({
           style={styles.loginTextInput}
         />
         <Pressable onPress={() => setShowPin(!showPin)} style={styles.loginInputEyeBtn}>
-          <Text style={styles.loginInputEyeText}>{showPin ? '👁️' : '👁️‍🗨️'}</Text>
+          <Text style={styles.loginInputEyeText}>{showPin ? 'скрыть' : 'показать'}</Text>
         </Pressable>
       </View>
 
@@ -909,7 +905,7 @@ function LoginScreen({
           {isSaving ? (
             <ActivityIndicator size="small" color="#006c35" />
           ) : (
-            <Text style={styles.loginSubmitArrowText}>➔</Text>
+            <Text style={styles.loginSubmitArrowText}>{'->'}</Text>
           )}
         </View>
       </Pressable>
@@ -918,7 +914,7 @@ function LoginScreen({
       <View style={styles.demoPanel}>
         <View style={styles.demoHeaderRow}>
           <Text style={styles.demoTitle}>Демо-аккаунт</Text>
-          <Text style={styles.demoInfoIcon}>ℹ️</Text>
+          <Text style={styles.demoInfoIcon}>(i)</Text>
         </View>
         <Text style={styles.demoBodyText}>
           aibek/1234  ·  aigerim/9999{"\n"}
@@ -929,7 +925,7 @@ function LoginScreen({
 
       {/* Footer message */}
       <View style={styles.loginFooter}>
-        <Text style={styles.loginFooterIcon}>🛡️</Text>
+        <Text style={styles.loginFooterIcon}>[i]</Text>
         <Text style={styles.loginFooterText}>
           По вопросам доступа{"\n"}обратитесь к администратору.
         </Text>
@@ -1009,14 +1005,14 @@ function SenderForm({
         {/* New Request Navigation Card */}
         <Pressable onPress={() => onFormStepChange('details')} style={styles.newRequestNavCard}>
           <View style={styles.newRequestNavIconBg}>
-            <Text style={styles.newRequestNavIconEmoji}>📄</Text>
+            <Text style={styles.newRequestNavIconEmoji}>[doc]</Text>
             <Text style={styles.newRequestNavIconPlus}>+</Text>
           </View>
           <View style={styles.newRequestNavContent}>
             <Text style={styles.newRequestNavTitle}>Новая заявка на списание</Text>
             <Text style={styles.newRequestNavSubtitle}>{activeOutletName}</Text>
           </View>
-          <Text style={styles.newRequestNavChevron}>➔</Text>
+          <Text style={styles.newRequestNavChevron}>{'>'}</Text>
         </Pressable>
 
         {/* Reason / Cause text input (AI prompt) */}
@@ -1040,7 +1036,7 @@ function SenderForm({
             )}
           </View>
           <Pressable onPress={onChoosePhoto} style={styles.photoUploadButton}>
-            <Text style={styles.photoUploadButtonCamera}>📷</Text>
+            <Text style={styles.photoUploadButtonCamera}>[cam]</Text>
             <Text style={styles.photoUploadButtonText}>Добавить фото</Text>
             <View style={styles.photoUploadPlusBadge}>
               <Text style={styles.photoUploadPlusText}>+</Text>
@@ -1056,7 +1052,7 @@ function SenderForm({
         >
           <Text style={styles.wizardProceedText}>Продолжить оформление</Text>
           <View style={styles.wizardProceedArrowCircle}>
-            <Text style={styles.wizardProceedArrowText}>➔</Text>
+            <Text style={styles.wizardProceedArrowText}>{'>'}</Text>
           </View>
         </Pressable>
       </View>
@@ -1117,7 +1113,7 @@ function SenderForm({
               <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
                 {item.name}
               </Text>
-              {isSelected && <Text style={styles.reasonChipCheck}>✓</Text>}
+              {isSelected && <Text style={styles.reasonChipCheck}>ok</Text>}
             </Pressable>
           )
         })}
@@ -1235,7 +1231,7 @@ function SenderForm({
           <View style={styles.deductionEmployeeSelector}>
             {form.deductionEmployeeId ? (
               <View style={styles.deductionEmployeeChip}>
-                <Text style={styles.deductionEmployeeChipIcon}>👤</Text>
+                <Text style={styles.deductionEmployeeChipIcon}>u</Text>
                 <Text style={styles.deductionEmployeeChipText}>
                   {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
                 </Text>
@@ -1243,7 +1239,7 @@ function SenderForm({
                   onPress={() => onSetField('deductionEmployeeId', '')}
                   style={styles.deductionEmployeeChipClear}
                 >
-                  <Text style={styles.deductionEmployeeChipClearText}>✕</Text>
+                  <Text style={styles.deductionEmployeeChipClearText}>x</Text>
                 </Pressable>
               </View>
             ) : (
@@ -1289,7 +1285,7 @@ function SenderForm({
           {isSaving ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Text style={styles.detailsSubmitIconEmoji}>✈️</Text>
+            <Text style={styles.detailsSubmitIconEmoji}>OK</Text>
           )}
         </View>
       </Pressable>
@@ -1534,7 +1530,7 @@ function ReviewerQueueCard({
       </View>
       {selectionMode ? (
         <View style={[styles.selectDot, selected && styles.selectDotActive]}>
-          {selected ? <Text style={styles.selectDotText}>✓</Text> : null}
+          {selected ? <Text style={styles.selectDotText}>v</Text> : null}
         </View>
       ) : null}
     </Pressable>
@@ -1753,7 +1749,7 @@ function RequestCard({
           </View>
         </View>
       </View>
-      <Text style={styles.requestChevron}>❯</Text>
+      <Text style={styles.requestChevron}>{'>'}</Text>
     </Pressable>
   )
 }
@@ -2050,7 +2046,7 @@ function AddEmployeeModal({
             <View style={styles.detailTitleRow}>
               <Text style={styles.detailTitle}>Новый сотрудник</Text>
               <Pressable onPress={onClose} style={styles.detailClose}>
-                <Text style={styles.detailCloseText}>✕</Text>
+                <Text style={styles.detailCloseText}>x</Text>
               </Pressable>
             </View>
 
