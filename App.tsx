@@ -1365,10 +1365,7 @@ function SenderForm({
                 <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
               ) : (
                 <View style={styles.aiPhotoPlaceholder}>
-                  <View style={styles.aiCameraIcon}>
-                    <View style={styles.aiCameraBody} />
-                    <View style={styles.aiCameraLens} />
-                  </View>
+                  <CameraIcon />
                   <Text style={styles.aiPhotoPlaceholderText}>Нажмите чтобы добавить фото</Text>
                 </View>
               )}
@@ -1459,8 +1456,7 @@ function SenderForm({
           ) : (
             <View style={styles.detailsPhotoEmpty}>
               <View style={styles.detailsPhotoCameraBox}>
-                <View style={styles.aiCameraBody} />
-                <View style={styles.aiCameraLens} />
+                <CameraIcon />
               </View>
               <Text style={styles.detailsPhotoEmptyText}>Нажмите, чтобы добавить фото</Text>
             </View>
@@ -1786,6 +1782,17 @@ function RequestList({
           <Text style={styles.emptyTitle}>Заявок пока нет</Text>
         </View>
       ) : null}
+    </View>
+  )
+}
+
+function CameraIcon() {
+  return (
+    <View style={styles.aiCameraIcon}>
+      <View style={styles.aiCameraBody}>
+        <View style={styles.aiCameraLens} />
+      </View>
+      <View style={styles.aiCameraTop} />
     </View>
   )
 }
@@ -4125,23 +4132,39 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   aiCameraIcon: {
+    width: 44,
+    height: 34,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
+    position: 'relative',
+    marginBottom: 6,
   },
   aiCameraBody: {
     width: 40,
-    height: 30,
+    height: 28,
     borderRadius: 6,
     borderWidth: 3,
     borderColor: '#a0aec0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    marginTop: 4,
   },
   aiCameraLens: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     borderWidth: 2.5,
     borderColor: '#a0aec0',
-    marginTop: -22,
+  },
+  aiCameraTop: {
+    width: 10,
+    height: 3,
+    backgroundColor: '#a0aec0',
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+    position: 'absolute',
+    top: 0,
   },
   aiPhotoPlaceholderText: {
     fontSize: 14,
