@@ -13,6 +13,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -61,6 +62,18 @@ type Reason = {
   name: string
 }
 
+type AiAnalysisResult = {
+  productId: string
+  productName: string
+  reasonId: string
+  quantity: number
+  damageType: string
+  damageDiscoveredAt: string
+  confidence: number
+  signs: string[]
+  generatedComment: string
+}
+
 type WriteOffRequest = {
   id: string
   outletId: string
@@ -100,17 +113,20 @@ type FormState = {
   reasonId: string
   type: WriteOffType
   deductionEmployeeId: string
+  deductionReason: string
   comment: string
   photoUrl: string
   photoName: string
   photoHash: string
+  damageType: string
+  damageDiscoveredAt: string
+  productionDate: string
+  expiryDate: string
+  managerComment: string
 }
 
 const API_URL = normalizeBaseUrl(
   process.env.EXPO_PUBLIC_API_URL ?? 'http://46.101.134.38:4000/api',
-)
-const WEB_URL = normalizeBaseUrl(
-  process.env.EXPO_PUBLIC_WEB_URL ?? 'http://46.101.134.38:4000',
 )
 
 const FONT = {
@@ -143,6 +159,8 @@ const statusColor: Record<Status, string> = {
   iiko_error: '#c83c31',
 }
 
+const rejectReasons = ['Некачественное фото', 'Недостаточно оснований', 'Обсудим лично']
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     GolosText_400Regular,
@@ -158,12 +176,20 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('create')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState<FormState>(createEmptyForm())
+  const [formMode, setFormMode] = useState<'initial' | 'filling'>('initial')
+  const [aiHint, setAiHint] = useState('')
+  const [aiResult, setAiResult] = useState<AiAnalysisResult | null>(null)
   const [selectedRequestId, setSelectedRequestId] = useState('')
+  const [detailRequestId, setDetailRequestId] = useState('')
   const [rejectionDraft, setRejectionDraft] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   const selectedProduct = data.products.find((product) => product.id === form.productId)
+  const selectedReason = data.reasons.find((reason) => reason.id === form.reasonId)
 
   const myRequests = useMemo(
     () => data.requests.filter((request) => request.createdById === currentUser?.id),
@@ -176,7 +202,8 @@ export default function App() {
   )
 
   const selectedRequest =
-    data.requests.find((request) => request.id === selectedRequestId) ?? pendingRequests[0]
+    pendingRequests.find((request) => request.id === selectedRequestId) ?? pendingRequests[0]
+  const detailRequest = data.requests.find((request) => request.id === detailRequestId)
 
   const loadData = useCallback(async (userOverride?: Employee | null) => {
     try {
@@ -185,10 +212,11 @@ export default function App() {
       const query = activeUser?.id ? `?userId=${encodeURIComponent(activeUser.id)}` : ''
       const payload = await requestJson<BootstrapPayload>(`/bootstrap${query}`)
       setData(payload)
+      const nextPendingRequest = payload.requests.find((request) => request.status === 'pending')
       setSelectedRequestId((current) =>
-        payload.requests.some((request) => request.id === current)
+        payload.requests.some((request) => request.id === current && request.status === 'pending')
           ? current
-          : payload.requests[0]?.id || '',
+          : nextPendingRequest?.id || '',
       )
       setForm((current) =>
         current.outletId ? current : createDefaultForm(payload, activeUser ?? payload.employees[0]),
@@ -217,7 +245,7 @@ export default function App() {
       setCurrentUser(result.user)
       setData(payload)
       setViewMode(result.user.role === 'sender' ? 'create' : 'review')
-      setSelectedRequestId(payload.requests[0]?.id || '')
+      setSelectedRequestId(payload.requests.find((request) => request.status === 'pending')?.id || '')
       setForm(createDefaultForm(payload, result.user))
       setPassword('')
     } catch (requestError) {
@@ -233,11 +261,54 @@ export default function App() {
     setAuthError('')
     setData(emptyData)
     setForm(createEmptyForm())
+    setFormMode('initial')
+    setAiHint('')
+    setAiResult(null)
+    setSelectionMode(false)
+    setSelectedIds([])
+    setDetailRequestId('')
     setViewMode('create')
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
+    if (key === 'photoUrl') {
+      setAiResult(null)
+    }
+  }
+
+  async function analyzeCurrentPhoto() {
+    if (!form.photoUrl) {
+      Alert.alert('Фото', 'Сначала прикрепите фото продукции.')
+      return
+    }
+    if (!form.photoUrl.startsWith('data:image/')) {
+      Alert.alert('AI-анализ', 'Для AI-анализа используйте фото с камеры или галереи.')
+      return
+    }
+
+    try {
+      setIsAnalyzing(true)
+      const result = await analyzePhoto(form.photoUrl, aiHint, data.products, data.reasons)
+      setAiResult(result)
+      setForm((current) => ({
+        ...current,
+        productId: result.productId,
+        reasonId: result.reasonId,
+        quantity: String(result.quantity || 1),
+        damageType: result.damageType || '',
+        damageDiscoveredAt: result.damageDiscoveredAt || '',
+        comment: result.generatedComment,
+      }))
+      setFormMode('filling')
+    } catch (requestError) {
+      Alert.alert(
+        'AI-анализ',
+        requestError instanceof Error ? requestError.message : 'Не удалось проанализировать фото.',
+      )
+    } finally {
+      setIsAnalyzing(false)
+    }
   }
 
   async function pickCamera() {
@@ -270,13 +341,22 @@ export default function App() {
     applyImageResult(result)
   }
 
-  function useDemoPhoto() {
-    setForm((current) => ({
-      ...current,
-      photoUrl: `${WEB_URL}/writeoff-evidence.png`,
-      photoName: 'writeoff-evidence.png',
-      photoHash: `sha256:rn-demo-${Date.now().toString(16).slice(-8)}`,
-    }))
+  function choosePhotoSource() {
+    Alert.alert('Фото продукции', 'Откуда добавить фото?', [
+      {
+        text: 'Камера',
+        onPress: () => {
+          void pickCamera()
+        },
+      },
+      {
+        text: 'Галерея',
+        onPress: () => {
+          void pickGallery()
+        },
+      },
+      { text: 'Отмена', style: 'cancel' },
+    ])
   }
 
   function applyImageResult(result: ImagePicker.ImagePickerResult) {
@@ -292,9 +372,11 @@ export default function App() {
       photoName: name,
       photoHash: `sha256:${simpleHash(`${name}:${asset.uri}:${Date.now()}`)}`,
     }))
+    setAiResult(null)
+    setFormMode('initial')
   }
 
-  async function submitRequest() {
+  function submitRequest() {
     if (!currentUser) {
       Alert.alert('Ошибка', 'Сначала авторизуйтесь.')
       return
@@ -320,6 +402,24 @@ export default function App() {
       return
     }
 
+    Alert.alert(
+      'Проверить заявку',
+      `${product.name}\n${quantity} ${product.unit}\n${selectedReason?.name ?? 'Причина не выбрана'}`,
+      [
+        { text: 'Назад', style: 'cancel' },
+        {
+          text: 'Отправить',
+          onPress: () => {
+            void createRequest(product, quantity, comment)
+          },
+        },
+      ],
+    )
+  }
+
+  async function createRequest(product: Product, quantity: number, comment: string) {
+    if (!currentUser) return
+
     try {
       setIsSaving(true)
       await requestJson<{ request: WriteOffRequest }>('/requests', {
@@ -339,9 +439,16 @@ export default function App() {
           createdById: currentUser.id,
         }),
       })
-      await loadData()
-      setForm(createDefaultForm(data, currentUser))
+      const query = `?userId=${encodeURIComponent(currentUser.id)}`
+      const payload = await requestJson<BootstrapPayload>(`/bootstrap${query}`)
+      setData(payload)
+      setSelectedRequestId(payload.requests[0]?.id || '')
+      setForm(createDefaultForm(payload, currentUser))
+      setAiHint('')
+      setAiResult(null)
+      setFormMode('initial')
       setViewMode('mine')
+      Alert.alert('Готово', 'Заявка отправлена на проверку.')
     } catch (requestError) {
       Alert.alert(
         'Не удалось отправить',
@@ -362,18 +469,22 @@ export default function App() {
       })
       await loadData()
     } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'Ошибка API'
+      if (message.toLowerCase().includes('обработана')) {
+        await loadData()
+      }
       Alert.alert(
         'Не удалось подтвердить',
-        requestError instanceof Error ? requestError.message : 'Ошибка API',
+        message,
       )
     } finally {
       setIsSaving(false)
     }
   }
 
-  async function rejectRequest(requestId: string) {
+  async function rejectRequest(requestId: string, reasonOverride?: string) {
     if (!currentUser) return
-    const reason = rejectionDraft.trim()
+    const reason = (reasonOverride ?? rejectionDraft).trim()
     if (reason.length < 8) {
       Alert.alert('Отклонение', 'Укажите причину отклонения.')
       return
@@ -388,8 +499,56 @@ export default function App() {
       setRejectionDraft('')
       await loadData()
     } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'Ошибка API'
+      if (message.toLowerCase().includes('обработана')) {
+        await loadData()
+      }
       Alert.alert(
         'Не удалось отклонить',
+        message,
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function startSelection(requestId: string) {
+    setSelectionMode(true)
+    setSelectedIds((current) =>
+      current.includes(requestId) ? current : [...current, requestId],
+    )
+  }
+
+  function toggleSelection(requestId: string) {
+    const next = selectedIds.includes(requestId)
+      ? selectedIds.filter((id) => id !== requestId)
+      : [...selectedIds, requestId]
+    setSelectedIds(next)
+    setSelectionMode(next.length > 0)
+  }
+
+  function clearSelection() {
+    setSelectionMode(false)
+    setSelectedIds([])
+  }
+
+  async function bulkApproveRequests() {
+    if (!currentUser || !selectedIds.length) return
+    try {
+      setIsSaving(true)
+      await Promise.all(
+        selectedIds.map((requestId) =>
+          requestJson<{ request: WriteOffRequest }>(`/requests/${requestId}/approve`, {
+            method: 'PATCH',
+            body: JSON.stringify({ reviewedById: currentUser.id }),
+          }),
+        ),
+      )
+      clearSelection()
+      await loadData()
+    } catch (requestError) {
+      Alert.alert(
+        'Массовое подтверждение',
         requestError instanceof Error ? requestError.message : 'Ошибка API',
       )
     } finally {
@@ -406,8 +565,7 @@ export default function App() {
       >
         <View style={styles.header}>
           <BahandiLogo />
-          <Text style={styles.headerTitle}>Списание+</Text>
-          <Text style={styles.headerSub}>React Native приложение</Text>
+          <Text style={styles.headerTitle}>SPISANDI</Text>
         </View>
 
         {error ? (
@@ -439,16 +597,15 @@ export default function App() {
             />
           ) : (
             <>
-              <View style={styles.userGrid}>
-                <View style={styles.greenCard}>
-                  <Text style={styles.greenLabel}>Роль</Text>
-                  <Text style={styles.greenValue}>
-                    {currentUser.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
-                  </Text>
-                </View>
-                <View style={styles.greenCard}>
+              <View style={styles.userSummary}>
+                <View style={styles.userSummaryText}>
                   <Text style={styles.greenLabel}>Пользователь</Text>
                   <Text style={styles.greenValue}>{currentUser.name}</Text>
+                </View>
+                <View style={styles.rolePill}>
+                  <Text style={styles.rolePillText}>
+                    {currentUser.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
+                  </Text>
                 </View>
               </View>
 
@@ -475,16 +632,26 @@ export default function App() {
                     <SenderForm
                       data={data}
                       form={form}
+                      formMode={formMode}
+                      aiHint={aiHint}
+                      aiResult={aiResult}
+                      isAnalyzing={isAnalyzing}
                       isSaving={isSaving}
                       selectedProduct={selectedProduct}
+                      selectedReason={selectedReason}
                       onSetField={setField}
-                      onPickCamera={pickCamera}
-                      onPickGallery={pickGallery}
-                      onDemoPhoto={useDemoPhoto}
+                      onHintChange={setAiHint}
+                      onFormModeChange={setFormMode}
+                      onAnalyze={analyzeCurrentPhoto}
+                      onChoosePhoto={choosePhotoSource}
                       onSubmit={submitRequest}
                     />
                   ) : (
-                    <RequestList requests={myRequests} products={data.products} />
+                    <RequestList
+                      requests={myRequests}
+                      products={data.products}
+                      onSelect={(request) => setDetailRequestId(request.id)}
+                    />
                   )}
                 </>
               ) : (
@@ -510,19 +677,38 @@ export default function App() {
                       outlets={data.outlets}
                       rejectionDraft={rejectionDraft}
                       isSaving={isSaving}
+                      selectionMode={selectionMode}
+                      selectedIds={selectedIds}
                       onSelect={setSelectedRequestId}
                       onRejectionChange={setRejectionDraft}
                       onApprove={approveRequest}
                       onReject={rejectRequest}
+                      onLongPress={startSelection}
+                      onToggleSelect={toggleSelection}
+                      onBulkApprove={bulkApproveRequests}
+                      onClearSelection={clearSelection}
                     />
                   ) : (
-                    <RequestList requests={data.requests} products={data.products} />
+                    <RequestList
+                      requests={data.requests}
+                      products={data.products}
+                      onSelect={(request) => setDetailRequestId(request.id)}
+                    />
                   )}
                 </>
               )}
             </>
           )}
         </ScrollView>
+
+        <RequestDetailModal
+          request={detailRequest}
+          products={data.products}
+          outlets={data.outlets}
+          reasons={data.reasons}
+          employees={data.employees}
+          onClose={() => setDetailRequestId('')}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
@@ -594,26 +780,62 @@ function LoginScreen({
 function SenderForm({
   data,
   form,
+  formMode,
+  aiHint,
+  aiResult,
+  isAnalyzing,
   isSaving,
   selectedProduct,
+  selectedReason,
   onSetField,
-  onPickCamera,
-  onPickGallery,
-  onDemoPhoto,
+  onHintChange,
+  onFormModeChange,
+  onAnalyze,
+  onChoosePhoto,
   onSubmit,
 }: {
   data: BootstrapPayload
   form: FormState
+  formMode: 'initial' | 'filling'
+  aiHint: string
+  aiResult: AiAnalysisResult | null
+  isAnalyzing: boolean
   isSaving: boolean
   selectedProduct?: Product
+  selectedReason?: Reason
   onSetField: <K extends keyof FormState>(key: K, value: FormState[K]) => void
-  onPickCamera: () => void
-  onPickGallery: () => void
-  onDemoPhoto: () => void
+  onHintChange: (value: string) => void
+  onFormModeChange: (mode: 'initial' | 'filling') => void
+  onAnalyze: () => void
+  onChoosePhoto: () => void
   onSubmit: () => void
 }) {
+  const progress = calculateFormProgress(form, selectedReason)
+  const quantity = Number(form.quantity)
+  const reasonName = selectedReason?.name.toLowerCase() ?? ''
+  const needsExpiry = reasonName.includes('срок') || reasonName.includes('проср')
+  const needsDamage = reasonName.includes('повреж') || reasonName.includes('порч')
+  const canSubmit = progress >= 100 && !isSaving
+
   return (
     <View style={styles.form}>
+      <FormProgress percent={progress} />
+
+      <View style={styles.panelHeader}>
+        <Text style={styles.panelTitle}>Новая заявка на списание</Text>
+        <Text style={styles.panelDetail}>
+          {data.outlets.length === 1 ? data.outlets[0]?.name : `${data.outlets.length} точек`}
+        </Text>
+      </View>
+
+      <Text style={styles.label}>Что случилось?</Text>
+      <TextInput
+        value={aiHint}
+        onChangeText={onHintChange}
+        placeholder="Например: помялось, истек срок, упало"
+        style={styles.input}
+      />
+
       <View style={styles.photoBox}>
         {form.photoUrl ? (
           <Image source={{ uri: form.photoUrl }} style={styles.photo} />
@@ -622,13 +844,39 @@ function SenderForm({
         )}
       </View>
 
-      <View style={styles.actionRow}>
-        <SecondaryButton label="Камера" onPress={onPickCamera} />
-        <SecondaryButton label="Галерея" onPress={onPickGallery} />
-        <OrangeButton label="Demo" onPress={onDemoPhoto} />
-      </View>
+      <SecondaryButton
+        label={form.photoUrl ? 'Заменить фото' : 'Добавить фото'}
+        onPress={onChoosePhoto}
+      />
 
       {form.photoHash ? <Text style={styles.hashText}>{form.photoHash}</Text> : null}
+
+      {formMode === 'initial' ? (
+        <View style={styles.wizardBox}>
+          <Pressable
+            disabled={isAnalyzing || !form.photoUrl}
+            style={[
+              styles.submitButton,
+              (isAnalyzing || !form.photoUrl) && styles.disabledButton,
+            ]}
+            onPress={onAnalyze}
+          >
+            {isAnalyzing ? <ActivityIndicator color="#ffffff" /> : null}
+            <Text style={styles.submitText}>
+              {isAnalyzing ? 'Анализируем...' : 'Сгенерировать с ИИ'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => onFormModeChange('filling')}
+          >
+            <Text style={styles.secondaryText}>Заполнить вручную</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          {aiResult ? <AiResultCard result={aiResult} /> : null}
 
       <Text style={styles.label}>Торговая точка</Text>
       <ChipGrid
@@ -670,6 +918,61 @@ function SenderForm({
         onChange={(value) => onSetField('reasonId', value)}
       />
 
+      <CostSummary product={selectedProduct} quantity={quantity} />
+
+      {needsExpiry ? (
+        <View style={styles.inputGrid}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Дата производства</Text>
+            <TextInput
+              value={form.productionDate}
+              onChangeText={(value) => onSetField('productionDate', value)}
+              placeholder="2026-06-25"
+              style={styles.input}
+            />
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Годен до</Text>
+            <TextInput
+              value={form.expiryDate}
+              onChangeText={(value) => onSetField('expiryDate', value)}
+              placeholder="2026-06-27"
+              style={styles.input}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {needsDamage ? (
+        <>
+          <Text style={styles.label}>Вид повреждения</Text>
+          <ChipGrid
+            items={[
+              { id: 'Помято' },
+              { id: 'Упало' },
+              { id: 'Порвана упаковка' },
+              { id: 'Прочее' },
+            ]}
+            value={form.damageType}
+            getLabel={(item) => item.id}
+            onChange={(value) => onSetField('damageType', value)}
+          />
+
+          <Text style={styles.label}>Когда обнаружено</Text>
+          <ChipGrid
+            items={[
+              { id: 'При приемке' },
+              { id: 'При хранении' },
+              { id: 'В процессе готовки' },
+              { id: 'Прочее' },
+            ]}
+            value={form.damageDiscoveredAt}
+            getLabel={(item) => item.id}
+            onChange={(value) => onSetField('damageDiscoveredAt', value)}
+          />
+        </>
+      ) : null}
+
       <View style={styles.segmented}>
         <TabButton
           active={form.type === 'without_deduction'}
@@ -692,6 +995,22 @@ function SenderForm({
             getLabel={(item) => item.name}
             onChange={(value) => onSetField('deductionEmployeeId', value)}
           />
+
+          <Text style={styles.label}>Причина удержания</Text>
+          <TextInput
+            value={form.deductionReason}
+            onChangeText={(value) => onSetField('deductionReason', value)}
+            placeholder="Например: халатность"
+            style={styles.input}
+          />
+
+          <Text style={styles.label}>Комментарий руководителя</Text>
+          <TextInput
+            value={form.managerComment}
+            onChangeText={(value) => onSetField('managerComment', value)}
+            placeholder="Опционально"
+            style={styles.input}
+          />
         </>
       ) : null}
 
@@ -705,13 +1024,15 @@ function SenderForm({
       />
 
       <Pressable
-        disabled={isSaving}
-        style={[styles.submitButton, isSaving && styles.disabledButton]}
+        disabled={!canSubmit}
+        style={[styles.submitButton, !canSubmit && styles.disabledButton]}
         onPress={onSubmit}
       >
         {isSaving ? <ActivityIndicator color="#ffffff" /> : null}
         <Text style={styles.submitText}>Отправить на проверку</Text>
       </Pressable>
+        </>
+      )}
     </View>
   )
 }
@@ -723,10 +1044,16 @@ function ReviewerView({
   outlets,
   rejectionDraft,
   isSaving,
+  selectionMode,
+  selectedIds,
   onSelect,
   onRejectionChange,
   onApprove,
   onReject,
+  onLongPress,
+  onToggleSelect,
+  onBulkApprove,
+  onClearSelection,
 }: {
   request?: WriteOffRequest
   pendingRequests: WriteOffRequest[]
@@ -734,10 +1061,16 @@ function ReviewerView({
   outlets: Outlet[]
   rejectionDraft: string
   isSaving: boolean
+  selectionMode: boolean
+  selectedIds: string[]
   onSelect: (id: string) => void
   onRejectionChange: (value: string) => void
   onApprove: (id: string) => void
-  onReject: (id: string) => void
+  onReject: (id: string, reason?: string) => void
+  onLongPress: (id: string) => void
+  onToggleSelect: (id: string) => void
+  onBulkApprove: () => void
+  onClearSelection: () => void
 }) {
   if (!request) {
     return (
@@ -749,21 +1082,46 @@ function ReviewerView({
 
   const product = products.find((item) => item.id === request.productId)
   const outlet = outlets.find((item) => item.id === request.outletId)
+  const amount = product ? request.quantity * product.cost : 0
 
   return (
     <View style={styles.reviewPanel}>
-      <Text style={styles.label}>Очередь проверки</Text>
-      <View style={styles.chipGrid}>
+      <View style={styles.panelHeader}>
+        <Text style={styles.panelTitle}>Очередь проверки</Text>
+        <Text style={styles.panelDetail}>pending · {pendingRequests.length}</Text>
+      </View>
+
+      {selectedIds.length > 0 ? (
+        <View style={styles.selectionBar}>
+          <Text style={styles.selectionText}>Выбрано: {selectedIds.length}</Text>
+          <View style={styles.selectionActions}>
+            <Pressable style={styles.selectionGhost} onPress={onClearSelection}>
+              <Text style={styles.selectionGhostText}>Снять</Text>
+            </Pressable>
+            <Pressable
+              disabled={isSaving}
+              style={[styles.selectionApprove, isSaving && styles.disabledButton]}
+              onPress={onBulkApprove}
+            >
+              <Text style={styles.selectionApproveText}>Подтвердить</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.queueList}>
         {pendingRequests.map((item) => (
-          <Pressable
+          <ReviewerQueueCard
             key={item.id}
-            style={[styles.chip, item.id === request.id && styles.chipActive]}
-            onPress={() => onSelect(item.id)}
-          >
-            <Text style={[styles.chipText, item.id === request.id && styles.chipTextActive]}>
-              #{item.id}
-            </Text>
-          </Pressable>
+            request={item}
+            product={products.find((productItem) => productItem.id === item.productId)}
+            outlet={outlets.find((outletItem) => outletItem.id === item.outletId)}
+            active={item.id === request.id}
+            selected={selectedIds.includes(item.id)}
+            selectionMode={selectionMode}
+            onPress={() => (selectionMode ? onToggleSelect(item.id) : onSelect(item.id))}
+            onLongPress={() => onLongPress(item.id)}
+          />
         ))}
       </View>
 
@@ -773,6 +1131,9 @@ function ReviewerView({
       <Text style={styles.reviewInfo}>
         {request.quantity} {request.unit} · {request.type === 'with_deduction' ? 'с удержанием' : 'без удержания'}
       </Text>
+      {product ? (
+        <Text style={styles.requestMeta}>{formatMoney(amount)} по себестоимости</Text>
+      ) : null}
       <Text style={styles.commentText}>{request.comment}</Text>
 
       <Text style={styles.label}>Причина отклонения</Text>
@@ -783,6 +1144,19 @@ function ReviewerView({
         multiline
         style={[styles.input, styles.commentInput]}
       />
+
+      <View style={styles.quickReasonGrid}>
+        {rejectReasons.map((reason) => (
+          <Pressable
+            key={reason}
+            style={styles.quickReasonChip}
+            onPress={() => onRejectionChange(reason)}
+            onLongPress={() => onReject(request.id, reason)}
+          >
+            <Text style={styles.quickReasonText}>{reason}</Text>
+          </Pressable>
+        ))}
+      </View>
 
       <View style={styles.actionRow}>
         <Pressable
@@ -804,12 +1178,117 @@ function ReviewerView({
   )
 }
 
+function FormProgress({ percent }: { percent: number }) {
+  return (
+    <View style={styles.progressBox}>
+      <View style={styles.progressHead}>
+        <Text style={styles.progressLabel}>Заполнение заявки</Text>
+        <Text style={styles.progressValue}>{percent}%</Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${percent}%` as `${number}%` }]} />
+      </View>
+    </View>
+  )
+}
+
+function CostSummary({
+  product,
+  quantity,
+}: {
+  product?: Product
+  quantity: number
+}) {
+  const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 0
+  const amount = product ? product.cost * safeQuantity : 0
+
+  return (
+    <View style={styles.costBox}>
+      <View>
+        <Text style={styles.costLabel}>Себестоимость</Text>
+        <Text style={styles.costValue}>{product ? formatMoney(product.cost) : '0 KZT'}</Text>
+      </View>
+      <View>
+        <Text style={styles.costLabel}>Итого</Text>
+        <Text style={styles.costValue}>{formatMoney(amount)}</Text>
+      </View>
+    </View>
+  )
+}
+
+function AiResultCard({ result }: { result: AiAnalysisResult }) {
+  return (
+    <View style={styles.aiResultBox}>
+      <View style={styles.aiResultHead}>
+        <Text style={styles.aiResultTitle}>AI заполнил заявку</Text>
+        <Text style={styles.aiConfidence}>{formatConfidence(result.confidence)}</Text>
+      </View>
+      <Text style={styles.aiResultText}>
+        {result.productName} · {result.quantity} шт
+      </Text>
+      {result.signs.length ? (
+        <Text style={styles.aiSigns}>{result.signs.slice(0, 3).join(' · ')}</Text>
+      ) : null}
+    </View>
+  )
+}
+
+function ReviewerQueueCard({
+  request,
+  product,
+  outlet,
+  active,
+  selected,
+  selectionMode,
+  onPress,
+  onLongPress,
+}: {
+  request: WriteOffRequest
+  product?: Product
+  outlet?: Outlet
+  active: boolean
+  selected: boolean
+  selectionMode: boolean
+  onPress: () => void
+  onLongPress: () => void
+}) {
+  return (
+    <Pressable
+      style={[
+        styles.queueCard,
+        active && styles.queueCardActive,
+        selected && styles.queueCardSelected,
+      ]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+    >
+      <View style={styles.queueCardBody}>
+        <Text style={styles.queueTitle}>#{request.id} · {product?.name ?? 'Продукт'}</Text>
+        <Text style={styles.requestMeta}>{outlet?.name ?? 'Bahandi'}</Text>
+        <Text style={styles.requestMeta}>
+          {request.quantity} {request.unit} · {new Date(request.createdAt).toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+      </View>
+      {selectionMode ? (
+        <View style={[styles.selectDot, selected && styles.selectDotActive]}>
+          {selected ? <Text style={styles.selectDotText}>✓</Text> : null}
+        </View>
+      ) : null}
+    </Pressable>
+  )
+}
+
 function RequestList({
   requests,
   products,
+  onSelect,
 }: {
   requests: WriteOffRequest[]
   products: Product[]
+  onSelect?: (request: WriteOffRequest) => void
 }) {
   return (
     <View style={styles.requestList}>
@@ -820,6 +1299,7 @@ function RequestList({
           productName={
             products.find((product) => product.id === request.productId)?.name ?? 'Продукт'
           }
+          onPress={onSelect ? () => onSelect(request) : undefined}
         />
       ))}
       {!requests.length ? (
@@ -866,14 +1346,6 @@ function SecondaryButton({ label, onPress }: { label: string; onPress: () => voi
   )
 }
 
-function OrangeButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.orangeButton} onPress={onPress}>
-      <Text style={styles.orangeText}>{label}</Text>
-    </Pressable>
-  )
-}
-
 function ChipGrid<T extends { id: string }>({
   items,
   value,
@@ -908,12 +1380,18 @@ function ChipGrid<T extends { id: string }>({
 function RequestCard({
   request,
   productName,
+  onPress,
 }: {
   request: WriteOffRequest
   productName: string
+  onPress?: () => void
 }) {
   return (
-    <View style={styles.requestCard}>
+    <Pressable
+      disabled={!onPress}
+      style={[styles.requestCard, onPress && styles.requestCardInteractive]}
+      onPress={onPress}
+    >
       <Image source={{ uri: request.photoUrl }} style={styles.requestPhoto} />
       <View style={styles.requestBody}>
         <Text style={styles.requestTitle}>
@@ -928,8 +1406,170 @@ function RequestCard({
           </Text>
         </View>
       </View>
+    </Pressable>
+  )
+}
+
+function RequestDetailModal({
+  request,
+  products,
+  outlets,
+  reasons,
+  employees,
+  onClose,
+}: {
+  request?: WriteOffRequest
+  products: Product[]
+  outlets: Outlet[]
+  reasons: Reason[]
+  employees: Employee[]
+  onClose: () => void
+}) {
+  const product = request
+    ? products.find((item) => item.id === request.productId)
+    : undefined
+  const outlet = request
+    ? outlets.find((item) => item.id === request.outletId)
+    : undefined
+  const reason = request
+    ? reasons.find((item) => item.id === request.reasonId)
+    : undefined
+  const sender = request
+    ? employees.find((item) => item.id === request.createdById)
+    : undefined
+  const reviewer = request?.reviewedById
+    ? employees.find((item) => item.id === request.reviewedById)
+    : undefined
+  const amount = product && request ? product.cost * request.quantity : 0
+
+  return (
+    <Modal
+      visible={Boolean(request)}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.detailSheet}>
+          {request ? (
+            <ScrollView contentContainerStyle={styles.detailContent}>
+              <Image source={{ uri: request.photoUrl }} style={styles.detailPhoto} />
+              <View style={styles.detailTitleRow}>
+                <View style={styles.detailTitleText}>
+                  <Text style={styles.detailKicker}>Заявка #{request.id}</Text>
+                  <Text style={styles.detailTitle}>{product?.name ?? 'Продукт'}</Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: `${statusColor[request.status]}18` }]}>
+                  <Text style={[styles.statusText, { color: statusColor[request.status] }]}>
+                    {statusCopy[request.status]}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.detailGrid}>
+                <DetailItem label="Точка" value={outlet?.name ?? 'Bahandi'} />
+                <DetailItem label="Адрес" value={outlet?.address ?? 'Адрес не указан'} />
+                <DetailItem label="Количество" value={`${request.quantity} ${request.unit}`} />
+                <DetailItem label="Сумма" value={formatMoney(amount)} />
+                <DetailItem label="Причина" value={reason?.name ?? 'Не указана'} />
+                <DetailItem
+                  label="Тип"
+                  value={request.type === 'with_deduction' ? 'С удержанием' : 'Без удержания'}
+                />
+                <DetailItem label="Отправил" value={sender?.name ?? request.createdById} />
+                <DetailItem
+                  label="Создано"
+                  value={new Date(request.createdAt).toLocaleString('ru-RU')}
+                />
+                {reviewer ? <DetailItem label="Проверил" value={reviewer.name} /> : null}
+                {request.reviewedAt ? (
+                  <DetailItem
+                    label="Проверено"
+                    value={new Date(request.reviewedAt).toLocaleString('ru-RU')}
+                  />
+                ) : null}
+              </View>
+
+              <View style={styles.detailNote}>
+                <Text style={styles.detailNoteLabel}>Комментарий</Text>
+                <Text style={styles.detailNoteText}>{request.comment || 'Нет комментария'}</Text>
+              </View>
+
+              {request.rejectionReason ? (
+                <View style={styles.detailRejectNote}>
+                  <Text style={styles.detailRejectLabel}>Причина отклонения</Text>
+                  <Text style={styles.detailRejectText}>{request.rejectionReason}</Text>
+                </View>
+              ) : null}
+
+              {request.iikoStatusMessage ? (
+                <View style={styles.detailNote}>
+                  <Text style={styles.detailNoteLabel}>Iiko</Text>
+                  <Text style={styles.detailNoteText}>{request.iikoStatusMessage}</Text>
+                </View>
+              ) : null}
+
+              <Pressable style={styles.detailCloseButton} onPress={onClose}>
+                <Text style={styles.detailCloseText}>Закрыть</Text>
+              </Pressable>
+            </ScrollView>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailItem}>
+      <Text style={styles.detailItemLabel}>{label}</Text>
+      <Text style={styles.detailItemValue}>{value}</Text>
     </View>
   )
+}
+
+async function analyzePhoto(
+  photoBase64: string,
+  hint: string,
+  products: Product[],
+  reasons: Reason[],
+): Promise<AiAnalysisResult> {
+  const data = await requestJson<{
+    productId: string
+    productName: string
+    reasonId: string
+    quantity: number
+    damageType: string
+    damageDiscoveredAt: string
+    comment: string
+    confidence: number
+    signs: string[]
+  }>('/ai/analyze', {
+    method: 'POST',
+    body: JSON.stringify({
+      photoBase64,
+      hint,
+      products: products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+      })),
+      reasons: reasons.map((reason) => ({ id: reason.id, name: reason.name })),
+    }),
+  })
+
+  return {
+    productId: data.productId,
+    productName: data.productName,
+    reasonId: data.reasonId,
+    quantity: data.quantity,
+    damageType: data.damageType,
+    damageDiscoveredAt: data.damageDiscoveredAt,
+    confidence: data.confidence,
+    signs: data.signs,
+    generatedComment: data.comment,
+  }
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -959,6 +1599,49 @@ function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, '')
 }
 
+function calculateFormProgress(form: FormState, reason?: Reason) {
+  const quantity = Number(form.quantity)
+  const reasonName = reason?.name.toLowerCase() ?? ''
+  let completedFields = 0
+  let totalFields = 6
+
+  if (form.photoUrl) completedFields += 1
+  if (form.outletId) completedFields += 1
+  if (form.productId) completedFields += 1
+  if (Number.isFinite(quantity) && quantity > 0) completedFields += 1
+  if (form.reasonId) completedFields += 1
+  if (form.comment.trim().length >= 10) completedFields += 1
+
+  if (reasonName.includes('срок') || reasonName.includes('проср')) {
+    totalFields += 2
+    if (form.productionDate) completedFields += 1
+    if (form.expiryDate) completedFields += 1
+  }
+
+  if (reasonName.includes('повреж') || reasonName.includes('порч')) {
+    totalFields += 2
+    if (form.damageType) completedFields += 1
+    if (form.damageDiscoveredAt) completedFields += 1
+  }
+
+  if (form.type === 'with_deduction') {
+    totalFields += 2
+    if (form.deductionEmployeeId) completedFields += 1
+    if (form.deductionReason) completedFields += 1
+  }
+
+  return Math.min(100, Math.round((completedFields / totalFields) * 100))
+}
+
+function formatMoney(value: number) {
+  return `${Math.round(value).toLocaleString('ru-RU')} KZT`
+}
+
+function formatConfidence(value: number) {
+  const percent = value <= 1 ? value * 100 : value
+  return `${Math.round(percent)}%`
+}
+
 function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState {
   const preferredOutletId = sender?.outletIds?.[0] ?? sender?.outletId
   const outlet = data.outlets.find((item) => item.id === preferredOutletId) ?? data.outlets[0]
@@ -973,6 +1656,12 @@ function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState
     photoUrl: '',
     photoName: '',
     photoHash: '',
+    damageType: '',
+    damageDiscoveredAt: '',
+    productionDate: '',
+    expiryDate: '',
+    deductionReason: '',
+    managerComment: '',
   }
 }
 
@@ -988,6 +1677,12 @@ function createEmptyForm(): FormState {
     photoUrl: '',
     photoName: '',
     photoHash: '',
+    damageType: '',
+    damageDiscoveredAt: '',
+    productionDate: '',
+    expiryDate: '',
+    deductionReason: '',
+    managerComment: '',
   }
 }
 
@@ -1061,15 +1756,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#292929',
-    fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
-  },
-  headerSub: {
-    color: 'rgba(0, 0, 0, 0.5)',
-    fontSize: 14.4,
+    fontSize: 20,
     fontWeight: '600',
     fontFamily: FONT.semi,
+    letterSpacing: 0,
   },
   content: {
     gap: 14,
@@ -1088,15 +1778,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: FONT.semi,
   },
-  userGrid: {
-    gap: 8,
-  },
-  greenCard: {
-    gap: 6,
-    minHeight: 78,
-    padding: 14,
+  userSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    minHeight: 74,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: '#0d803d',
+  },
+  userSummaryText: {
+    flex: 1,
+    gap: 5,
   },
   greenLabel: {
     color: 'rgba(255,255,255,0.76)',
@@ -1104,11 +1799,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: FONT.semi,
   },
+  rolePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  rolePillText: {
+    color: '#ffffff',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
   greenValue: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   tabs: {
     flexDirection: 'row',
@@ -1135,8 +1842,8 @@ const styles = StyleSheet.create({
   },
   tabText: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   tabTextActive: {
     color: '#292929',
@@ -1162,8 +1869,8 @@ const styles = StyleSheet.create({
   loginTitle: {
     color: '#292929',
     fontSize: 32,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   loginCopy: {
     color: 'rgba(0, 0, 0, 0.5)',
@@ -1189,8 +1896,8 @@ const styles = StyleSheet.create({
   },
   loginUserName: {
     color: '#292929',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   loginUserRole: {
     color: 'rgba(0, 0, 0, 0.5)',
@@ -1214,11 +1921,74 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#292929',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   form: {
     gap: 12,
+  },
+  panelHeader: {
+    gap: 4,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+  },
+  panelTitle: {
+    color: '#292929',
+    fontSize: 19.2,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  panelDetail: {
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
+    fontFamily: FONT.regular,
+  },
+  progressBox: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+  },
+  progressHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  progressLabel: {
+    color: '#292929',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  progressValue: {
+    color: '#0d803d',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  progressTrack: {
+    height: 7,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: '#e8f6ed',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#0d803d',
+  },
+  wizardBox: {
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
   },
   photoBox: {
     alignItems: 'center',
@@ -1237,8 +2007,8 @@ const styles = StyleSheet.create({
   photoPlaceholder: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 17.6,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   actionRow: {
     flexDirection: 'row',
@@ -1256,23 +2026,8 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     color: '#292929',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
-  },
-  orangeButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 46,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#ffc3a7',
-    backgroundColor: '#fff0e8',
-  },
-  orangeText: {
-    color: '#ff5e12',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   hashText: {
     color: 'rgba(0, 0, 0, 0.5)',
@@ -1283,8 +2038,8 @@ const styles = StyleSheet.create({
   label: {
     color: 'rgba(0, 0, 0, 0.5)',
     fontSize: 14.4,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   chipGrid: {
     flexDirection: 'row',
@@ -1311,8 +2066,8 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#0d803d',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   inputGrid: {
     flexDirection: 'row',
@@ -1347,6 +2102,63 @@ const styles = StyleSheet.create({
     borderColor: '#dee2e6',
     backgroundColor: '#f8f8f8',
   },
+  costBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+  },
+  costLabel: {
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
+    fontFamily: FONT.regular,
+  },
+  costValue: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  aiResultBox: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#a9ddba',
+    backgroundColor: '#e8f6ed',
+  },
+  aiResultHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  aiResultTitle: {
+    color: '#0d803d',
+    fontSize: 17.6,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  aiConfidence: {
+    color: '#0d803d',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  aiResultText: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontFamily: FONT.regular,
+  },
+  aiSigns: {
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
+    fontFamily: FONT.regular,
+  },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1362,8 +2174,8 @@ const styles = StyleSheet.create({
   submitText: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   requestList: {
     gap: 10,
@@ -1376,6 +2188,100 @@ const styles = StyleSheet.create({
     borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
   },
+  selectionBar: {
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#a9ddba',
+    backgroundColor: '#e8f6ed',
+  },
+  selectionText: {
+    color: '#0d803d',
+    fontSize: 17.6,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  selectionGhost: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#a9ddba',
+    backgroundColor: '#ffffff',
+  },
+  selectionGhostText: {
+    color: '#0d803d',
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  selectionApprove: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
+    borderRadius: 10,
+    backgroundColor: '#0d803d',
+  },
+  selectionApproveText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  queueList: {
+    gap: 8,
+  },
+  queueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+  },
+  queueCardActive: {
+    borderColor: '#0d803d',
+  },
+  queueCardSelected: {
+    backgroundColor: '#e8f6ed',
+    borderColor: '#0d803d',
+  },
+  queueCardBody: {
+    flex: 1,
+    gap: 3,
+  },
+  queueTitle: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  selectDot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0d803d',
+    backgroundColor: '#ffffff',
+  },
+  selectDotActive: {
+    backgroundColor: '#0d803d',
+  },
+  selectDotText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontFamily: FONT.bold,
+  },
   reviewPhoto: {
     width: '100%',
     height: 240,
@@ -1385,8 +2291,8 @@ const styles = StyleSheet.create({
   reviewTitle: {
     color: '#292929',
     fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   reviewInfo: {
     color: '#292929',
@@ -1404,6 +2310,25 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semi,
     lineHeight: 24,
   },
+  quickReasonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickReasonChip: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ffc3a7',
+    backgroundColor: '#fff0e8',
+  },
+  quickReasonText: {
+    color: '#ff5e12',
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
   approveButton: {
     flex: 1,
     alignItems: 'center',
@@ -1415,8 +2340,8 @@ const styles = StyleSheet.create({
   approveText: {
     color: '#ffffff',
     fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   rejectButton: {
     flex: 1,
@@ -1431,8 +2356,8 @@ const styles = StyleSheet.create({
   rejectText: {
     color: '#c83c31',
     fontSize: 19.2,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   requestCard: {
     flexDirection: 'row',
@@ -1442,6 +2367,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#dee2e6',
     backgroundColor: '#ffffff',
+  },
+  requestCardInteractive: {
+    shadowColor: '#201c18',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   requestPhoto: {
     width: 76,
@@ -1457,8 +2388,8 @@ const styles = StyleSheet.create({
   requestTitle: {
     color: '#292929',
     fontSize: 17.6,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   requestMeta: {
     color: 'rgba(0, 0, 0, 0.5)',
@@ -1474,8 +2405,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 14.4,
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
   emptyBox: {
     alignItems: 'center',
@@ -1486,7 +2417,126 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontWeight: '700',
-    fontFamily: FONT.bold,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  detailSheet: {
+    maxHeight: '88%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: '#ffffff',
+  },
+  detailContent: {
+    gap: 12,
+    padding: 14,
+    paddingBottom: 28,
+  },
+  detailPhoto: {
+    width: '100%',
+    height: 240,
+    borderRadius: 14,
+    backgroundColor: '#f8f8f8',
+  },
+  detailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  detailTitleText: {
+    flex: 1,
+    gap: 4,
+  },
+  detailKicker: {
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailTitle: {
+    color: '#292929',
+    fontSize: 22,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  detailItem: {
+    width: '48.7%',
+    gap: 5,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#f8f8f8',
+  },
+  detailItemLabel: {
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailItemValue: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailNote: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#e8f6ed',
+  },
+  detailNoteLabel: {
+    color: '#0d803d',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailNoteText: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontFamily: FONT.regular,
+    lineHeight: 24,
+  },
+  detailRejectNote: {
+    gap: 6,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#fff0ee',
+  },
+  detailRejectLabel: {
+    color: '#c83c31',
+    fontSize: 14.4,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
+  },
+  detailRejectText: {
+    color: '#292929',
+    fontSize: 17.6,
+    fontFamily: FONT.regular,
+    lineHeight: 24,
+  },
+  detailCloseButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    borderRadius: 10,
+    backgroundColor: '#0d803d',
+  },
+  detailCloseText: {
+    color: '#ffffff',
+    fontSize: 19.2,
+    fontWeight: '600',
+    fontFamily: FONT.semi,
   },
 })
