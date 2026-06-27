@@ -197,7 +197,7 @@ export default function App() {
   const [newEmpPin, setNewEmpPin] = useState('')
   const [addEmpError, setAddEmpError] = useState('')
 
-  const [formStep, setFormStep] = useState<'wizard' | 'details'>('wizard')
+  const [formStep, setFormStep] = useState<'wizard' | 'choose_mode' | 'details'>('wizard')
   const [showPin, setShowPin] = useState(false)
 
   const selectedProduct = data.products.find((product) => product.id === form.productId)
@@ -662,7 +662,7 @@ export default function App() {
                   <View style={styles.bannerUserInfo}>
                     <Text style={styles.bannerUserName}>{currentUser.name}</Text>
                     <Text style={styles.bannerUserOutlet}>
-                      {data.outlets.find((o) => o.id === form.outletId)?.name || 'Bahandi'}
+                      {currentUser.role === 'sender' ? (currentUser.city || 'Bahandi') : 'Bahandi'}
                     </Text>
                   </View>
                   <View style={styles.bannerRolePill}>
@@ -970,8 +970,8 @@ function SenderForm({
   onAnalyze: () => void
   onChoosePhoto: () => void
   onSubmit: () => void
-  formStep: 'wizard' | 'details'
-  onFormStepChange: (step: 'wizard' | 'details') => void
+  formStep: 'wizard' | 'choose_mode' | 'details'
+  onFormStepChange: (step: 'wizard' | 'choose_mode' | 'details') => void
 }) {
   const progress = calculateFormProgress(form, selectedReason)
   const quantity = Number(form.quantity)
@@ -987,36 +987,118 @@ function SenderForm({
   const canProceedToDetails = form.photoUrl && aiHint.trim().length > 0
   const canSubmit = progress >= 100 && !isSaving
 
+  // Outlet options filtered by employee's city
+  const cityOutlets = data.outlets.filter((o) => o.city === currentUser.city)
+
   if (formStep === 'wizard') {
     return (
       <View style={styles.wizardContainer}>
-        {/* Progress Bar Widget */}
-        <View style={styles.progressWidget}>
-          <View style={styles.progressTextRow}>
-            <Text style={styles.progressTitle}>Заполнение заявки</Text>
-            <Text style={styles.progressPercent}>{progress}%</Text>
+        {/* Outlet selector for sender */}
+        {cityOutlets.length > 1 && (
+          <View style={styles.outletSelectorBox}>
+            <Text style={styles.wizardFieldLabel}>Выберите точку</Text>
+            <View style={styles.outletChipsRow}>
+              {cityOutlets.map((o) => (
+                <Pressable
+                  key={o.id}
+                  style={[
+                    styles.outletChip,
+                    form.outletId === o.id && styles.outletChipActive,
+                  ]}
+                  onPress={() => onSetField('outletId', o.id)}
+                >
+                  <Text
+                    style={[
+                      styles.outletChipText,
+                      form.outletId === o.id && styles.outletChipTextActive,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {o.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
-          <View style={styles.progressOuterBar}>
-            <View style={[styles.progressInnerBar, { width: `${progress}%` }]} />
-          </View>
-          <Text style={styles.progressLabelSub}>Заполните все обязательные поля</Text>
-        </View>
+        )}
 
-        {/* New Request Navigation Card */}
-        <Pressable onPress={() => onFormStepChange('details')} style={styles.newRequestNavCard}>
-          <View style={styles.newRequestNavIconBg}>
-            <Text style={styles.newRequestNavIconEmoji}>[doc]</Text>
-            <Text style={styles.newRequestNavIconPlus}>+</Text>
-          </View>
-          <View style={styles.newRequestNavContent}>
-            <Text style={styles.newRequestNavTitle}>Новая заявка на списание</Text>
-            <Text style={styles.newRequestNavSubtitle}>{activeOutletName}</Text>
-          </View>
-          <Text style={styles.newRequestNavChevron}>{'>'}</Text>
+        {/* Mode choice card */}
+        <Text style={styles.wizardSectionTitle}>Новая заявка на списание</Text>
+        <Text style={styles.wizardSectionSub}>{activeOutletName}</Text>
+
+        <View style={styles.modeCardsRow}>
+          {/* Manual mode card */}
+          <Pressable
+            style={styles.modeCard}
+            onPress={() => onFormStepChange('details')}
+          >
+            <View style={[styles.modeCardIconBox, { backgroundColor: '#fff3e0' }]}>
+              <View style={styles.modeCardIconLines}>
+                <View style={[styles.modeIconLine, { width: 28 }]} />
+                <View style={[styles.modeIconLine, { width: 20 }]} />
+                <View style={[styles.modeIconLine, { width: 24 }]} />
+              </View>
+            </View>
+            <Text style={styles.modeCardTitle}>Вручную</Text>
+            <Text style={styles.modeCardDesc}>Заполните форму самостоятельно</Text>
+          </Pressable>
+
+          {/* AI mode card */}
+          <Pressable
+            style={styles.modeCard}
+            onPress={() => onFormStepChange('choose_mode')}
+          >
+            <View style={[styles.modeCardIconBox, { backgroundColor: '#e8f5e9' }]}>
+              <View style={styles.modeCardAiBrain}>
+                <View style={styles.modeCardAiCircle} />
+                <View style={styles.modeCardAiDot} />
+                <View style={[styles.modeCardAiLine, { width: 20 }]} />
+                <View style={[styles.modeCardAiLine, { width: 14 }]} />
+              </View>
+            </View>
+            <Text style={styles.modeCardTitle}>С ИИ</Text>
+            <Text style={styles.modeCardDesc}>ИИ заполнит по фото</Text>
+          </Pressable>
+        </View>
+      </View>
+    )
+  }
+
+  // AI Mode: photo + hint before going to details
+  if (formStep === 'choose_mode') {
+    return (
+      <View style={styles.wizardContainer}>
+        <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
+          <Text style={styles.detailsBackText}>{'<'} Назад</Text>
         </Pressable>
 
-        {/* Reason / Cause text input (AI prompt) */}
-        <Text style={styles.wizardFieldLabel}>Причина списания</Text>
+        <Text style={styles.wizardSectionTitle}>Анализ с ИИ</Text>
+        <Text style={styles.wizardSectionSub}>Сфотографируйте товар — ИИ определит продукт и причину</Text>
+
+        {/* Photo upload block */}
+        <View style={styles.aiPhotoBlock}>
+          <Pressable onPress={onChoosePhoto} style={styles.aiPhotoPressable}>
+            {form.photoUrl ? (
+              <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
+            ) : (
+              <View style={styles.aiPhotoPlaceholder}>
+                <View style={styles.aiCameraIcon}>
+                  <View style={styles.aiCameraBody} />
+                  <View style={styles.aiCameraLens} />
+                </View>
+                <Text style={styles.aiPhotoPlaceholderText}>Нажмите чтобы добавить фото</Text>
+              </View>
+            )}
+            {!form.photoUrl && (
+              <View style={styles.aiPhotoPlusBadge}>
+                <Text style={styles.aiPhotoPlusText}>+</Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
+
+        {/* Hint input */}
+        <Text style={styles.wizardFieldLabel}>Описание (подсказка для ИИ)</Text>
         <TextInput
           value={aiHint}
           onChangeText={onHintChange}
@@ -1025,36 +1107,28 @@ function SenderForm({
           style={styles.wizardTextInput}
         />
 
-        {/* Photo selection section */}
-        <Text style={styles.wizardFieldLabel}>Фото товара / продукта</Text>
-        <View style={styles.photoUploadRow}>
-          <View style={styles.photoUploadPreviewBox}>
-            {form.photoUrl ? (
-              <Image source={{ uri: form.photoUrl }} style={styles.photoUploadPreviewImage} />
-            ) : (
-              <Text style={styles.photoUploadPreviewPlaceholder}>Нет фото</Text>
-            )}
-          </View>
-          <Pressable onPress={onChoosePhoto} style={styles.photoUploadButton}>
-            <Text style={styles.photoUploadButtonCamera}>[cam]</Text>
-            <Text style={styles.photoUploadButtonText}>Добавить фото</Text>
-            <View style={styles.photoUploadPlusBadge}>
-              <Text style={styles.photoUploadPlusText}>+</Text>
-            </View>
-          </Pressable>
-        </View>
+        {aiResult && <AiResultCard result={aiResult} />}
 
-        {/* Proceed Button */}
         <Pressable
-          disabled={!canProceedToDetails}
-          style={[styles.wizardProceedBtn, !canProceedToDetails && styles.disabledButton]}
-          onPress={() => onFormStepChange('details')}
+          disabled={!form.photoUrl || isAnalyzing}
+          style={[styles.wizardProceedBtn, (!form.photoUrl || isAnalyzing) && styles.disabledButton]}
+          onPress={onAnalyze}
         >
-          <Text style={styles.wizardProceedText}>Продолжить оформление</Text>
-          <View style={styles.wizardProceedArrowCircle}>
-            <Text style={styles.wizardProceedArrowText}>{'>'}</Text>
-          </View>
+          {isAnalyzing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.wizardProceedText}>Анализировать фото</Text>
+          )}
         </Pressable>
+
+        {aiResult && (
+          <Pressable
+            style={[styles.detailsSubmitBtn, { marginTop: 10 }]}
+            onPress={() => onFormStepChange('details')}
+          >
+            <Text style={styles.detailsSubmitText}>Далее — заполнить детали</Text>
+          </Pressable>
+        )}
       </View>
     )
   }
@@ -3723,6 +3797,189 @@ const styles = StyleSheet.create({
   wizardContainer: {
     gap: 16,
     paddingBottom: 24,
+  },
+  wizardSectionTitle: {
+    fontSize: 20,
+    fontFamily: FONT.bold,
+    color: '#1a202c',
+    marginTop: 8,
+  },
+  wizardSectionSub: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: '#718096',
+    marginTop: -10,
+  },
+  // Mode selection cards
+  modeCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  modeCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modeCardIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeCardIconLines: {
+    gap: 6,
+    alignItems: 'flex-start',
+  },
+  modeIconLine: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#f97316',
+  },
+  modeCardAiBrain: {
+    alignItems: 'center',
+    gap: 5,
+  },
+  modeCardAiCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 3,
+    borderColor: '#0d803d',
+  },
+  modeCardAiDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0d803d',
+    marginTop: -4,
+  },
+  modeCardAiLine: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#0d803d',
+    opacity: 0.5,
+  },
+  modeCardTitle: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: '#1a202c',
+  },
+  modeCardDesc: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#718096',
+    textAlign: 'center',
+  },
+  // Outlet chips
+  outletSelectorBox: {
+    gap: 8,
+  },
+  outletChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  outletChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    maxWidth: 160,
+  },
+  outletChipActive: {
+    borderColor: '#0d803d',
+    backgroundColor: '#e6f4ec',
+  },
+  outletChipText: {
+    fontSize: 13,
+    fontFamily: FONT.semi,
+    color: '#4a5568',
+  },
+  outletChipTextActive: {
+    color: '#0d803d',
+  },
+  // AI photo block
+  aiPhotoBlock: {
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  aiPhotoPressable: {
+    height: 200,
+    borderRadius: 18,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  aiPhotoPreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  aiPhotoPlaceholder: {
+    flex: 1,
+    backgroundColor: '#f7f8fa',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  aiCameraIcon: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  aiCameraBody: {
+    width: 40,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 3,
+    borderColor: '#a0aec0',
+  },
+  aiCameraLens: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2.5,
+    borderColor: '#a0aec0',
+    marginTop: -22,
+  },
+  aiPhotoPlaceholderText: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#a0aec0',
+    marginTop: 10,
+  },
+  aiPhotoPlusBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#0d803d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiPhotoPlusText: {
+    fontSize: 18,
+    color: '#ffffff',
+    fontFamily: FONT.bold,
+    lineHeight: 22,
   },
   progressWidget: {
     backgroundColor: '#ffffff',
