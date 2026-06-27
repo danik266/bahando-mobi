@@ -7,7 +7,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/golos-text'
 import * as ImagePicker from 'expo-image-picker'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import {
   RefreshControl,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +31,8 @@ type Role = 'sender' | 'reviewer'
 type Status = 'pending' | 'approved' | 'rejected' | 'iiko_error'
 type WriteOffType = 'without_deduction' | 'with_deduction'
 type ViewMode = 'create' | 'mine' | 'review' | 'history' | 'stats'
+type Language = 'ru' | 'kk'
+type FormEntryMode = 'manual' | 'ai'
 
 type Outlet = {
   id: string
@@ -56,7 +59,7 @@ type Employee = {
   city: string
   outletId: string
   outletIds: string[]
-  accessScope: 'assigned' | 'all'
+  accessScope: 'assigned' | 'city' | 'all'
   iikoEmployeeId: string
 }
 
@@ -89,8 +92,9 @@ type WriteOffRequest = {
   comment: string
   photoUrl: string
   photoName: string
+  photoUrls?: string[]
+  photoNames?: string[]
   photoHash: string
-  extraPhotoUrls?: string[]
   status: Status
   createdById: string
   reviewedById?: string
@@ -149,13 +153,6 @@ const emptyData: BootstrapPayload = {
   serverTime: '',
 }
 
-const statusCopy: Record<Status, string> = {
-  pending: 'На проверке',
-  approved: 'Подтверждено',
-  rejected: 'Отклонено',
-  iiko_error: 'Ошибка Iiko',
-}
-
 const statusColor: Record<Status, string> = {
   pending: '#ff5e12',
   approved: '#0d803d',
@@ -165,6 +162,268 @@ const statusColor: Record<Status, string> = {
 
 const rejectReasons = ['Некачественное фото', 'Недостаточно оснований', 'Обсудим лично']
 
+const translations = {
+  ru: {
+    loading: 'Загрузка...',
+    sender: 'Сотрудник',
+    reviewer: 'Проверяющий',
+    logout: 'Выйти',
+    writeOff: 'Списать',
+    myRequests: 'Мои заявки',
+    review: 'Проверка',
+    history: 'История',
+    stats: 'Статистика',
+    addEmployee: '+ Добавить сотрудника',
+    totalRequests: 'Всего заявок: {{count}}',
+    welcome: 'Добро пожаловать!',
+    loginSubtitle: 'Войдите личным логином\nи пин-кодом.',
+    login: 'Логин',
+    pin: 'Пин-код',
+    hide: 'скрыть',
+    show: 'показать',
+    signIn: 'Войти',
+    demoAccount: 'Демо-аккаунт',
+    accessHelp: 'По вопросам доступа\nобратитесь к администратору.',
+    chooseOutlet: 'Выберите точку',
+    outletSearchPlaceholder: 'Поиск по названию или адресу',
+    outletsAvailable: 'Доступно точек: {{count}}',
+    noOutletsFound: 'Точки не найдены',
+    newRequest: 'Новая заявка на списание',
+    manual: 'Вручную',
+    manualDesc: 'Заполните форму самостоятельно',
+    withAi: 'С ИИ',
+    withAiDesc: 'ИИ заполнит по фото',
+    back: 'Назад',
+    aiAnalysis: 'Анализ с ИИ',
+    aiSubtitle: 'Сфотографируйте товар — ИИ определит продукт и причину',
+    tapToAddPhoto: 'Нажмите чтобы добавить фото',
+    aiHintLabel: 'Описание (подсказка для ИИ)',
+    aiHintPlaceholder: 'Например: помялось, истек срок, упало',
+    analyzePhoto: 'Анализировать фото',
+    analyzedPhoto: 'Фото уже проанализировано',
+    detailsNext: 'Далее — заполнить детали',
+    productPhoto: 'Фото товара',
+    camera: 'Камера',
+    gallery: 'Галерея',
+    addPhoto: '+\nфото',
+    chooseProduct: 'Выберите продукт',
+    productSearchPlaceholder: 'Начните вводить название...',
+    noResults: 'Ничего не найдено',
+    quantity: 'Количество',
+    writeoffReason: 'Причина списания',
+    unitPiece: 'шт',
+    cost: 'Себестоимость',
+    writeoffTotal: 'Итого к списанию',
+    productionDate: 'Дата производства',
+    expiryDate: 'Годен до',
+    damageType: 'Вид повреждения',
+    damageWhen: 'Когда обнаружено',
+    noDeduction: 'Без удержания',
+    withDeduction: 'С удержанием',
+    deductionEmployee: 'Сотрудник для удержания',
+    deductionReason: 'Причина удержания',
+    deductionPlaceholder: 'Например: халатность',
+    comment: 'Комментарий',
+    commentPlaceholder: 'Например: булочки повреждены при приемке',
+    submitForReview: 'Отправить на проверку',
+    queueEmpty: 'Очередь пуста',
+    reviewQueue: 'Очередь проверки',
+    pendingLabel: 'На проверке',
+    selected: 'Выбрано: {{count}}',
+    clear: 'Снять',
+    approve: 'Подтвердить',
+    reject: 'Отклонить',
+    rejectionReason: 'Причина отклонения',
+    rejectionPlaceholder: 'Например: фото не подтверждает количество',
+    atCost: 'по себестоимости',
+    request: 'Заявка',
+    product: 'Продукт',
+    noRequests: 'Заявок пока нет',
+    statsTitle: 'Сводные данные (утверждено)',
+    export: 'Экспорт',
+    exportTitle: 'Экспорт статистики',
+    totalWriteoff: 'Сумма списаний',
+    totalDeductions: 'Сумма удержаний',
+    avgWriteoff: 'Среднее списание',
+    allRequests: 'Всего заявок',
+    approvedShort: 'Утв',
+    rejectedShort: 'Откл',
+    pendingShort: 'Ожид',
+    byOutlets: 'По точкам',
+    employees: 'Сотрудники',
+    reasons: 'Причины',
+    noOutletStats: 'Нет данных по точкам',
+    noEmployeeStats: 'Нет данных по сотрудникам',
+    noReasonStats: 'Нет данных по причинам',
+    employeeRole: 'Сотрудник',
+    reviewerRole: 'Проверяющий',
+    newEmployee: 'Новый сотрудник',
+    fullName: 'ФИО сотрудника',
+    city: 'Город',
+    cancel: 'Отмена',
+    save: 'Сохранить',
+    outlet: 'Точка',
+    address: 'Адрес',
+    amount: 'Сумма',
+    type: 'Тип',
+    sentBy: 'Отправил',
+    createdAt: 'Создано',
+    reviewedBy: 'Проверил',
+    reviewedAt: 'Проверено',
+    notSpecified: 'Не указана',
+    addressEmpty: 'Адрес не указан',
+    noComment: 'Нет комментария',
+    close: 'Закрыть',
+    photos: 'Фото',
+    micStart: 'Голосом',
+    micStop: 'Стоп',
+    speechUnsupportedTitle: 'Голосовой ввод',
+    speechUnsupportedMessage: 'На этом устройстве голосовая запись из приложения недоступна. Откройте клавиатуру и нажмите диктовку.',
+    speechError: 'Не удалось распознать речь. Попробуйте ещё раз.',
+    pending: 'На проверке',
+    approved: 'Подтверждено',
+    rejected: 'Отклонено',
+    iiko_error: 'Ошибка Iiko',
+  },
+  kk: {
+    loading: 'Жүктелуде...',
+    sender: 'Қызметкер',
+    reviewer: 'Тексеруші',
+    logout: 'Шығу',
+    writeOff: 'Есептен шығару',
+    myRequests: 'Менің өтінімдерім',
+    review: 'Тексеру',
+    history: 'Тарих',
+    stats: 'Статистика',
+    addEmployee: '+ Қызметкер қосу',
+    totalRequests: 'Барлық өтінім: {{count}}',
+    welcome: 'Қош келдіңіз!',
+    loginSubtitle: 'Жеке логин және\nпин-кодпен кіріңіз.',
+    login: 'Логин',
+    pin: 'Пин-код',
+    hide: 'жасыру',
+    show: 'көрсету',
+    signIn: 'Кіру',
+    demoAccount: 'Демо-аккаунт',
+    accessHelp: 'Қолжетімділік бойынша\nәкімшіге хабарласыңыз.',
+    chooseOutlet: 'Нүктені таңдаңыз',
+    outletSearchPlaceholder: 'Атауы немесе мекенжайы бойынша іздеу',
+    outletsAvailable: 'Қолжетімді нүкте: {{count}}',
+    noOutletsFound: 'Нүкте табылмады',
+    newRequest: 'Есептен шығару өтінімі',
+    manual: 'Қолмен',
+    manualDesc: 'Форманы өзіңіз толтырыңыз',
+    withAi: 'ЖИ арқылы',
+    withAiDesc: 'ЖИ фото бойынша толтырады',
+    back: 'Артқа',
+    aiAnalysis: 'ЖИ талдауы',
+    aiSubtitle: 'Тауарды фотоға түсіріңіз — ЖИ өнім мен себепті анықтайды',
+    tapToAddPhoto: 'Фото қосу үшін басыңыз',
+    aiHintLabel: 'Сипаттама (ЖИ үшін)',
+    aiHintPlaceholder: 'Мысалы: майысты, мерзімі өтті, құлады',
+    analyzePhoto: 'Фотоны талдау',
+    analyzedPhoto: 'Фото талданып қойған',
+    detailsNext: 'Әрі қарай — деректерді толтыру',
+    productPhoto: 'Тауар фотосы',
+    camera: 'Камера',
+    gallery: 'Галерея',
+    addPhoto: '+\nфото',
+    chooseProduct: 'Өнімді таңдаңыз',
+    productSearchPlaceholder: 'Атауын тере бастаңыз...',
+    noResults: 'Ештеңе табылмады',
+    quantity: 'Саны',
+    writeoffReason: 'Есептен шығару себебі',
+    unitPiece: 'дана',
+    cost: 'Өзіндік құн',
+    writeoffTotal: 'Есептен шығарылатын сома',
+    productionDate: 'Өндірілген күні',
+    expiryDate: 'Жарамдылық мерзімі',
+    damageType: 'Зақым түрі',
+    damageWhen: 'Қашан анықталды',
+    noDeduction: 'Ұсталымсыз',
+    withDeduction: 'Ұсталыммен',
+    deductionEmployee: 'Ұсталым қызметкері',
+    deductionReason: 'Ұсталым себебі',
+    deductionPlaceholder: 'Мысалы: салғырттық',
+    comment: 'Пікір',
+    commentPlaceholder: 'Мысалы: тоқаш қабылдау кезінде зақымданған',
+    submitForReview: 'Тексеруге жіберу',
+    queueEmpty: 'Кезек бос',
+    reviewQueue: 'Тексеру кезегі',
+    pendingLabel: 'Тексеруде',
+    selected: 'Таңдалды: {{count}}',
+    clear: 'Тазалау',
+    approve: 'Растау',
+    reject: 'Қабылдамау',
+    rejectionReason: 'Қабылдамау себебі',
+    rejectionPlaceholder: 'Мысалы: фото санын растамайды',
+    atCost: 'өзіндік құн бойынша',
+    request: 'Өтінім',
+    product: 'Өнім',
+    noRequests: 'Әзірге өтінім жоқ',
+    statsTitle: 'Жиынтық деректер (расталған)',
+    export: 'Экспорт',
+    exportTitle: 'Статистиканы экспорттау',
+    totalWriteoff: 'Есептен шығару сомасы',
+    totalDeductions: 'Ұсталым сомасы',
+    avgWriteoff: 'Орташа есептен шығару',
+    allRequests: 'Барлық өтінім',
+    approvedShort: 'Раст',
+    rejectedShort: 'Қайт',
+    pendingShort: 'Күт',
+    byOutlets: 'Нүктелер',
+    employees: 'Қызметкерлер',
+    reasons: 'Себептер',
+    noOutletStats: 'Нүктелер бойынша дерек жоқ',
+    noEmployeeStats: 'Қызметкерлер бойынша дерек жоқ',
+    noReasonStats: 'Себептер бойынша дерек жоқ',
+    employeeRole: 'Қызметкер',
+    reviewerRole: 'Тексеруші',
+    newEmployee: 'Жаңа қызметкер',
+    fullName: 'Қызметкердің аты-жөні',
+    city: 'Қала',
+    cancel: 'Бас тарту',
+    save: 'Сақтау',
+    outlet: 'Нүкте',
+    address: 'Мекенжай',
+    amount: 'Сома',
+    type: 'Түрі',
+    sentBy: 'Жіберген',
+    createdAt: 'Құрылған',
+    reviewedBy: 'Тексерген',
+    reviewedAt: 'Тексерілген',
+    notSpecified: 'Көрсетілмеген',
+    addressEmpty: 'Мекенжай көрсетілмеген',
+    noComment: 'Пікір жоқ',
+    close: 'Жабу',
+    photos: 'Фото',
+    micStart: 'Дауыспен',
+    micStop: 'Тоқтату',
+    speechUnsupportedTitle: 'Дауыспен енгізу',
+    speechUnsupportedMessage: 'Бұл құрылғыда қолданба ішінен дауыс жазу қолжетімсіз. Пернетақтаны ашып, диктовканы қолданыңыз.',
+    speechError: 'Сөйлеуді тану мүмкін болмады. Қайталап көріңіз.',
+    pending: 'Тексеруде',
+    approved: 'Расталды',
+    rejected: 'Қабылданбады',
+    iiko_error: 'Iiko қатесі',
+  },
+} as const
+
+type TranslationKey = keyof typeof translations.ru
+
+function t(language: Language, key: TranslationKey, params?: Record<string, string | number>) {
+  let value: string = translations[language][key] ?? translations.ru[key]
+  if (!params) return value
+  Object.entries(params).forEach(([paramKey, paramValue]) => {
+    value = value.replace(new RegExp(`{{${paramKey}}}`, 'g'), String(paramValue))
+  })
+  return value
+}
+
+function getStatusCopy(status: Status, language: Language) {
+  return t(language, status)
+}
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     GolosText_400Regular,
@@ -173,6 +432,7 @@ export default function App() {
     GolosText_900Black,
   })
   const [currentUser, setCurrentUser] = useState<Employee | null>(null)
+  const [language, setLanguage] = useState<Language>('ru')
   const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
@@ -184,8 +444,10 @@ export default function App() {
   const [error, setError] = useState('')
   const [form, setForm] = useState<FormState>(createEmptyForm())
   const [formMode, setFormMode] = useState<'initial' | 'filling'>('initial')
+  const [formEntryMode, setFormEntryMode] = useState<FormEntryMode>('manual')
   const [aiHint, setAiHint] = useState('')
   const [aiResult, setAiResult] = useState<AiAnalysisResult | null>(null)
+  const [analyzedPhotoHash, setAnalyzedPhotoHash] = useState('')
   const [selectedRequestId, setSelectedRequestId] = useState('')
   const [detailRequestId, setDetailRequestId] = useState('')
   const [rejectionDraft, setRejectionDraft] = useState('')
@@ -276,8 +538,10 @@ export default function App() {
     setData(emptyData)
     setForm(createEmptyForm())
     setFormMode('initial')
+    setFormEntryMode('manual')
     setAiHint('')
     setAiResult(null)
+    setAnalyzedPhotoHash('')
     setSelectionMode(false)
     setSelectedIds([])
     setDetailRequestId('')
@@ -290,16 +554,21 @@ export default function App() {
     setForm((current) => ({ ...current, [key]: value }))
     if (key === 'photoUrl') {
       setAiResult(null)
+      setAnalyzedPhotoHash('')
     }
   }
 
   async function analyzeCurrentPhoto() {
     if (!form.photoUrl) {
-      Alert.alert('Фото', 'Сначала прикрепите фото продукции.')
+      Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'))
+      return
+    }
+    if (aiResult && analyzedPhotoHash && analyzedPhotoHash === form.photoHash) {
+      Alert.alert(t(language, 'aiAnalysis'), t(language, 'analyzedPhoto'))
       return
     }
     if (!form.photoUrl.startsWith('data:image/')) {
-      Alert.alert('AI-анализ', 'Для AI-анализа используйте фото с камеры или галереи.')
+      Alert.alert(t(language, 'aiAnalysis'), t(language, 'tapToAddPhoto'))
       return
     }
 
@@ -317,9 +586,11 @@ export default function App() {
         comment: result.generatedComment,
       }))
       setFormMode('filling')
+      setAnalyzedPhotoHash(form.photoHash)
+      setFormStep('details')
     } catch (requestError) {
       Alert.alert(
-        'AI-анализ',
+        t(language, 'aiAnalysis'),
         requestError instanceof Error ? requestError.message : 'Не удалось проанализировать фото.',
       )
     } finally {
@@ -330,7 +601,7 @@ export default function App() {
   async function pickCamera() {
     const permission = await ImagePicker.requestCameraPermissionsAsync()
     if (!permission.granted) {
-      Alert.alert('Камера', 'Разрешите доступ к камере, чтобы прикрепить фото.')
+      Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'))
       return
     }
 
@@ -345,7 +616,7 @@ export default function App() {
   async function pickGallery() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (!permission.granted) {
-      Alert.alert('Фото', 'Разрешите доступ к галерее, чтобы прикрепить фото.')
+      Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'))
       return
     }
 
@@ -358,20 +629,20 @@ export default function App() {
   }
 
   function choosePhotoSource() {
-    Alert.alert('Фото продукции', 'Откуда добавить фото?', [
+    Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'), [
       {
-        text: 'Камера',
+        text: t(language, 'camera'),
         onPress: () => {
           void pickCamera()
         },
       },
       {
-        text: 'Галерея',
+        text: t(language, 'gallery'),
         onPress: () => {
           void pickGallery()
         },
       },
-      { text: 'Отмена', style: 'cancel' },
+      { text: t(language, 'cancel'), style: 'cancel' },
     ])
   }
 
@@ -387,15 +658,31 @@ export default function App() {
       photoUrl: dataUrl,
       photoName: name,
       photoHash: `sha256:${simpleHash(`${name}:${asset.uri}:${Date.now()}`)}`,
+      extraPhotoUrls: formEntryMode === 'ai' ? [] : current.extraPhotoUrls,
     }))
     setAiResult(null)
+    setAnalyzedPhotoHash('')
     setFormMode('initial')
   }
 
+  function removeMainPhoto() {
+    setForm((current) => ({
+      ...current,
+      photoUrl: '',
+      photoName: '',
+      photoHash: '',
+      extraPhotoUrls: formEntryMode === 'ai' ? [] : current.extraPhotoUrls,
+    }))
+    setAiResult(null)
+    setAnalyzedPhotoHash('')
+    setFormMode('initial')
+    if (formEntryMode === 'ai') setFormStep('choose_mode')
+  }
+
   function addExtraPhoto() {
-    Alert.alert('Фото продукции', 'Откуда добавить фото?', [
+    Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'), [
       {
-        text: 'Камера',
+        text: t(language, 'camera'),
         onPress: async () => {
           const permission = await ImagePicker.requestCameraPermissionsAsync()
           if (!permission.granted) return
@@ -416,7 +703,7 @@ export default function App() {
         },
       },
       {
-        text: 'Галерея',
+        text: t(language, 'gallery'),
         onPress: async () => {
           const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
           if (!permission.granted) return
@@ -436,13 +723,13 @@ export default function App() {
           }
         },
       },
-      { text: 'Отмена', style: 'cancel' },
+      { text: t(language, 'cancel'), style: 'cancel' },
     ])
   }
 
   function submitRequest() {
     if (!currentUser) {
-      Alert.alert('Ошибка', 'Сначала авторизуйтесь.')
+      Alert.alert(t(language, 'login'), t(language, 'signIn'))
       return
     }
     const product = data.products.find((item) => item.id === form.productId)
@@ -450,29 +737,29 @@ export default function App() {
     const comment = form.comment.trim()
 
     if (!form.photoUrl) {
-      Alert.alert('Фото', 'Прикрепите фото продукции.')
+      Alert.alert(t(language, 'productPhoto'), t(language, 'tapToAddPhoto'))
       return
     }
     if (!product || !Number.isFinite(quantity) || quantity <= 0) {
-      Alert.alert('Количество', 'Укажите корректный продукт и количество.')
+      Alert.alert(t(language, 'quantity'), t(language, 'chooseProduct'))
       return
     }
     if (comment.length < 10) {
-      Alert.alert('Комментарий', 'Комментарий должен быть не короче 10 символов.')
+      Alert.alert(t(language, 'comment'), t(language, 'commentPlaceholder'))
       return
     }
     if (form.type === 'with_deduction' && !form.deductionEmployeeId) {
-      Alert.alert('Удержание', 'Выберите сотрудника для удержания.')
+      Alert.alert(t(language, 'withDeduction'), t(language, 'deductionEmployee'))
       return
     }
 
     Alert.alert(
-      'Проверить заявку',
-      `${product.name}\n${quantity} ${product.unit}\n${selectedReason?.name ?? 'Причина не выбрана'}`,
+      t(language, 'submitForReview'),
+      `${product.name}\n${quantity} ${product.unit}\n${selectedReason?.name ?? t(language, 'notSpecified')}`,
       [
-        { text: 'Назад', style: 'cancel' },
+        { text: t(language, 'back'), style: 'cancel' },
         {
-          text: 'Отправить',
+          text: t(language, 'submitForReview'),
           onPress: () => {
             void createRequest(product, quantity, comment)
           },
@@ -486,6 +773,7 @@ export default function App() {
 
     try {
       setIsSaving(true)
+      const extraPhotoUrls = form.extraPhotoUrls ?? []
       await requestJson<{ request: WriteOffRequest }>('/requests', {
         method: 'POST',
         body: JSON.stringify({
@@ -499,8 +787,12 @@ export default function App() {
           comment,
           photoUrl: form.photoUrl,
           photoName: form.photoName,
+          photoUrls: [form.photoUrl, ...extraPhotoUrls].filter(Boolean),
+          photoNames: [
+            form.photoName || 'photo-1.jpg',
+            ...extraPhotoUrls.map((_, index) => `photo-${index + 2}.jpg`),
+          ],
           photoHash: form.photoHash,
-          extraPhotoUrls: form.extraPhotoUrls,
           createdById: currentUser.id,
         }),
       })
@@ -511,13 +803,15 @@ export default function App() {
       setForm(createDefaultForm(payload, currentUser))
       setAiHint('')
       setAiResult(null)
+      setAnalyzedPhotoHash('')
       setFormMode('initial')
+      setFormEntryMode('manual')
       setViewMode('mine')
       setFormStep('wizard')
-      Alert.alert('Готово', 'Заявка отправлена на проверку.')
+      Alert.alert(t(language, 'submitForReview'), t(language, 'pendingLabel'))
     } catch (requestError) {
       Alert.alert(
-        'Не удалось отправить',
+        t(language, 'submitForReview'),
         requestError instanceof Error ? requestError.message : 'Ошибка API',
       )
     } finally {
@@ -540,7 +834,7 @@ export default function App() {
           createdById: currentUser.id,
         }),
       })
-      Alert.alert('Успех', `Сотрудник ${newEmpName} успешно добавлен!`)
+      Alert.alert(t(language, 'save'), `${newEmpName}`)
       setIsAddEmployeeVisible(false)
       setNewEmpName('')
       setNewEmpLogin('')
@@ -568,7 +862,7 @@ export default function App() {
         await loadData()
       }
       Alert.alert(
-        'Не удалось подтвердить',
+        t(language, 'approve'),
         message,
       )
     } finally {
@@ -580,7 +874,7 @@ export default function App() {
     if (!currentUser) return
     const reason = (reasonOverride ?? rejectionDraft).trim()
     if (reason.length < 8) {
-      Alert.alert('Отклонение', 'Укажите причину отклонения.')
+      Alert.alert(t(language, 'reject'), t(language, 'rejectionReason'))
       return
     }
 
@@ -598,7 +892,7 @@ export default function App() {
         await loadData()
       }
       Alert.alert(
-        'Не удалось отклонить',
+        t(language, 'reject'),
         message,
       )
     } finally {
@@ -642,7 +936,7 @@ export default function App() {
       await loadData()
     } catch (requestError) {
       Alert.alert(
-        'Массовое подтверждение',
+        t(language, 'approve'),
         requestError instanceof Error ? requestError.message : 'Ошибка API',
       )
     } finally {
@@ -661,6 +955,7 @@ export default function App() {
           <View style={styles.header}>
             <BahandiLogo />
             <Text style={styles.headerTitle}>SPISANDI</Text>
+            <LanguageToggle language={language} onChange={setLanguage} />
           </View>
         )}
 
@@ -679,7 +974,7 @@ export default function App() {
           {!fontsLoaded || isLoading ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator color="#0d803d" />
-              <Text style={styles.muted}>Загрузка...</Text>
+              <Text style={styles.muted}>{t(language, 'loading')}</Text>
             </View>
           ) : !currentUser ? (
             <LoginScreen
@@ -687,6 +982,7 @@ export default function App() {
               password={password}
               authError={authError}
               isSaving={isSaving}
+              language={language}
               onLoginNameChange={setLoginName}
               onPasswordChange={setPassword}
               onLogin={login}
@@ -703,6 +999,7 @@ export default function App() {
                 <View style={styles.bannerLogoRow}>
                   <BahandiLogo />
                   <Text style={styles.bannerLogoText}>SPISANDI</Text>
+                  <LanguageToggle language={language} onChange={setLanguage} compact />
                 </View>
 
                 {/* User info row */}
@@ -718,7 +1015,7 @@ export default function App() {
                   </View>
                   <View style={styles.bannerRolePill}>
                     <Text style={styles.bannerRoleText}>
-                      {currentUser.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
+                      {currentUser.role === 'sender' ? t(language, 'sender') : t(language, 'reviewer')}
                     </Text>
                   </View>
                 </View>
@@ -726,7 +1023,7 @@ export default function App() {
                 {/* Logout action */}
                 <Pressable style={styles.bannerLogoutBtn} onPress={logout}>
                   <Text style={styles.bannerLogoutIcon}>{'->'}</Text>
-                  <Text style={styles.bannerLogoutText}>Выйти</Text>
+                  <Text style={styles.bannerLogoutText}>{t(language, 'logout')}</Text>
                 </Pressable>
               </ImageBackground>
 
@@ -735,12 +1032,12 @@ export default function App() {
                   <View style={styles.tabs}>
                     <TabButton
                       active={viewMode === 'create'}
-                      label="Списать"
+                      label={t(language, 'writeOff')}
                       onPress={() => setViewMode('create')}
                     />
                     <TabButton
                       active={viewMode === 'mine'}
-                      label="Мои заявки"
+                      label={t(language, 'myRequests')}
                       onPress={() => setViewMode('mine')}
                     />
                   </View>
@@ -750,29 +1047,37 @@ export default function App() {
                       currentUser={currentUser}
                       data={data}
                       form={form}
+                      formEntryMode={formEntryMode}
                       formMode={formMode}
                       aiHint={aiHint}
                       aiResult={aiResult}
+                      analyzedPhotoHash={analyzedPhotoHash}
                       isAnalyzing={isAnalyzing}
                       isSaving={isSaving}
                       selectedProduct={selectedProduct}
                       selectedReason={selectedReason}
                       onSetField={setField}
+                      onSetFormEntryMode={setFormEntryMode}
                       onHintChange={setAiHint}
                       onFormModeChange={setFormMode}
                       onAnalyze={analyzeCurrentPhoto}
                       onChoosePhoto={choosePhotoSource}
+                      onRemovePhoto={removeMainPhoto}
                       onAddExtraPhoto={addExtraPhoto}
                       onSubmit={submitRequest}
                       formStep={formStep}
                       onFormStepChange={setFormStep}
+                      language={language}
                     />
                   ) : (
                     <>
-                      <Text style={styles.totalRequestsLabel}>Всего заявок: {myRequests.length}</Text>
+                      <Text style={styles.totalRequestsLabel}>
+                        {t(language, 'totalRequests', { count: myRequests.length })}
+                      </Text>
                       <RequestList
                         requests={myRequests}
                         products={data.products}
+                        language={language}
                         onSelect={(request) => setDetailRequestId(request.id)}
                       />
                     </>
@@ -785,24 +1090,24 @@ export default function App() {
                       style={styles.addEmployeeTopButton}
                       onPress={() => setIsAddEmployeeVisible(true)}
                     >
-                      <Text style={styles.addEmployeeTopButtonText}>+ Добавить сотрудника</Text>
+                      <Text style={styles.addEmployeeTopButtonText}>{t(language, 'addEmployee')}</Text>
                     </Pressable>
                   )}
 
                   <View style={styles.tabs}>
                     <TabButton
                       active={viewMode === 'review'}
-                      label="Проверка"
+                      label={t(language, 'review')}
                       onPress={() => setViewMode('review')}
                     />
                     <TabButton
                       active={viewMode === 'history'}
-                      label="История"
+                      label={t(language, 'history')}
                       onPress={() => setViewMode('history')}
                     />
                     <TabButton
                       active={viewMode === 'stats'}
-                      label="Статистика"
+                      label={t(language, 'stats')}
                       onPress={() => setViewMode('stats')}
                     />
                   </View>
@@ -825,11 +1130,13 @@ export default function App() {
                       onToggleSelect={toggleSelection}
                       onBulkApprove={bulkApproveRequests}
                       onClearSelection={clearSelection}
+                      language={language}
                     />
                   ) : viewMode === 'history' ? (
                     <RequestList
                       requests={data.requests}
                       products={data.products}
+                      language={language}
                       onSelect={(request) => setDetailRequestId(request.id)}
                     />
                   ) : (
@@ -839,6 +1146,7 @@ export default function App() {
                       outlets={data.outlets}
                       employees={data.employees}
                       reasons={data.reasons}
+                      language={language}
                     />
                   )}
                 </>
@@ -853,6 +1161,7 @@ export default function App() {
           outlets={data.outlets}
           reasons={data.reasons}
           employees={data.employees}
+          language={language}
           onClose={() => setDetailRequestId('')}
         />
 
@@ -870,6 +1179,7 @@ export default function App() {
           onSave={handleAddEmployee}
           isSaving={isSaving}
           error={addEmpError}
+          language={language}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -881,6 +1191,7 @@ function LoginScreen({
   password,
   authError,
   isSaving,
+  language,
   onLoginNameChange,
   onPasswordChange,
   onLogin,
@@ -889,6 +1200,7 @@ function LoginScreen({
   password: string
   authError: string
   isSaving: boolean
+  language: Language
   onLoginNameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onLogin: () => void
@@ -897,13 +1209,13 @@ function LoginScreen({
 
   return (
     <View style={styles.loginContainer}>
-      <Text style={styles.loginWelcomeTitle}>Добро пожаловать!</Text>
+      <Text style={styles.loginWelcomeTitle}>{t(language, 'welcome')}</Text>
       <Text style={styles.loginWelcomeSubtitle}>
-        Войдите личным логином{"\n"}и пин-кодом.
+        {t(language, 'loginSubtitle')}
       </Text>
 
       {/* Login input box */}
-      <Text style={styles.loginFieldLabel}>Логин</Text>
+      <Text style={styles.loginFieldLabel}>{t(language, 'login')}</Text>
       <View style={styles.loginInputWrapper}>
         <Text style={styles.loginInputIcon}>@</Text>
         <TextInput
@@ -923,7 +1235,7 @@ function LoginScreen({
       </View>
 
       {/* PIN code input box */}
-      <Text style={styles.loginFieldLabel}>Пин-код</Text>
+      <Text style={styles.loginFieldLabel}>{t(language, 'pin')}</Text>
       <View style={styles.loginInputWrapper}>
         <Text style={styles.loginInputIcon}>*</Text>
         <TextInput
@@ -936,7 +1248,7 @@ function LoginScreen({
           style={styles.loginTextInput}
         />
         <Pressable onPress={() => setShowPin(!showPin)} style={styles.loginInputEyeBtn}>
-          <Text style={styles.loginInputEyeText}>{showPin ? 'скрыть' : 'показать'}</Text>
+          <Text style={styles.loginInputEyeText}>{showPin ? t(language, 'hide') : t(language, 'show')}</Text>
         </Pressable>
       </View>
 
@@ -952,7 +1264,7 @@ function LoginScreen({
         style={[styles.loginSubmitButton, isSaving && styles.disabledButton]}
         onPress={onLogin}
       >
-        <Text style={styles.loginSubmitText}>Войти</Text>
+        <Text style={styles.loginSubmitText}>{t(language, 'signIn')}</Text>
         <View style={styles.loginSubmitArrowCircle}>
           {isSaving ? (
             <ActivityIndicator size="small" color="#006c35" />
@@ -965,8 +1277,7 @@ function LoginScreen({
       {/* Demo Accounts Panel */}
       <View style={styles.demoPanel}>
         <View style={styles.demoHeaderRow}>
-          <Text style={styles.demoTitle}>Демо-аккаунт</Text>
-          <Text style={styles.demoInfoIcon}>(i)</Text>
+          <Text style={styles.demoTitle}>{t(language, 'demoAccount')}</Text>
         </View>
         <Text style={styles.demoBodyText}>
           aibek/1234  ·  aigerim/9999{"\n"}
@@ -977,9 +1288,8 @@ function LoginScreen({
 
       {/* Footer message */}
       <View style={styles.loginFooter}>
-        <Text style={styles.loginFooterIcon}>[i]</Text>
         <Text style={styles.loginFooterText}>
-          По вопросам доступа{"\n"}обратитесь к администратору.
+          {t(language, 'accessHelp')}
         </Text>
       </View>
     </View>
@@ -990,287 +1300,73 @@ function SenderForm({
   currentUser,
   data,
   form,
+  formEntryMode,
   formMode,
   aiHint,
   aiResult,
+  analyzedPhotoHash,
   isAnalyzing,
   isSaving,
   selectedProduct,
   selectedReason,
   onSetField,
+  onSetFormEntryMode,
   onHintChange,
   onFormModeChange,
   onAnalyze,
   onChoosePhoto,
+  onRemovePhoto,
   onAddExtraPhoto,
   onSubmit,
   formStep,
   onFormStepChange,
+  language,
 }: {
   currentUser: Employee | null
   data: BootstrapPayload
   form: FormState
+  formEntryMode: FormEntryMode
   formMode: 'initial' | 'filling'
   aiHint: string
   aiResult: AiAnalysisResult | null
+  analyzedPhotoHash: string
   isAnalyzing: boolean
   isSaving: boolean
   selectedProduct?: Product
   selectedReason?: Reason
   onSetField: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+  onSetFormEntryMode: (mode: FormEntryMode) => void
   onHintChange: (value: string) => void
   onFormModeChange: (mode: 'initial' | 'filling') => void
   onAnalyze: () => void
   onChoosePhoto: () => void
+  onRemovePhoto: () => void
   onAddExtraPhoto: () => void
   onSubmit: () => void
   formStep: 'wizard' | 'choose_mode' | 'details'
   onFormStepChange: (step: 'wizard' | 'choose_mode' | 'details') => void
+  language: Language
 }) {
   const progress = calculateFormProgress(form, selectedReason)
   const quantity = Number(form.quantity)
   const reasonName = selectedReason?.name.toLowerCase() ?? ''
   const needsExpiry = reasonName.includes('срок') || reasonName.includes('проср')
   const needsDamage = reasonName.includes('повреж') || reasonName.includes('порч')
-  
+
   const cost = selectedProduct ? selectedProduct.cost : 0
   const totalCostAmount = selectedProduct && quantity > 0 ? quantity * selectedProduct.cost : 0
 
   const activeOutletName = data.outlets.find((o) => o.id === form.outletId)?.name || 'Bahandi'
 
-  const canProceedToDetails = form.photoUrl && aiHint.trim().length > 0
   const canSubmit = progress >= 100 && !isSaving
+  const currentPhotoAlreadyAnalyzed = Boolean(
+    form.photoHash && analyzedPhotoHash === form.photoHash,
+  )
+  const canAnalyzePhoto = Boolean(form.photoUrl) && !isAnalyzing && !currentPhotoAlreadyAnalyzed
+  const photoPickerLocked = formEntryMode === 'ai' && currentPhotoAlreadyAnalyzed
 
   // Outlet options filtered by employee's city
   const cityOutlets = data.outlets.filter((o) => o.city === currentUser?.city)
-
-  const renderDetailsFields = () => {
-    return (
-      <View style={{ gap: 16 }}>
-        {/* Product search input */}
-        <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
-        <ProductSearch
-          products={data.products}
-          value={form.productId}
-          onChange={(val) => onSetField('productId', val)}
-        />
-
-        {/* Quantity entry */}
-        <Text style={styles.wizardFieldLabel}>Количество</Text>
-        <View style={styles.detailsQuantityRow}>
-          <TextInput
-            keyboardType="decimal-pad"
-            value={form.quantity}
-            onChangeText={(value) => {
-              // Разрешаем только цифры и одну точку
-              const cleaned = value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-              const parts = cleaned.split('.');
-              const finalVal = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned;
-              onSetField('quantity', finalVal);
-            }}
-            placeholder="0"
-            style={styles.detailsQuantityInput}
-          />
-          <View style={styles.detailsUnitBadge}>
-            <Text style={styles.detailsUnitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
-          </View>
-        </View>
-
-        {/* Reason selector chips */}
-        <Text style={styles.wizardFieldLabel}>Причина списания</Text>
-        <View style={styles.reasonsChipsContainer}>
-          {data.reasons.map((item) => {
-            const isSelected = form.reasonId === item.id
-            return (
-              <Pressable
-                key={item.id}
-                style={[
-                  styles.reasonChipItem,
-                  isSelected && styles.reasonChipItemActive,
-                ]}
-                onPress={() => onSetField('reasonId', item.id)}
-              >
-                <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
-                  {item.name}
-                </Text>
-                {isSelected && (
-                  <View style={styles.reasonChipCheckDot} />
-                )}
-              </Pressable>
-            )
-          })}
-        </View>
-
-        {/* Cost grid side-by-side cards */}
-        <View style={styles.costCardsRow}>
-          <View style={styles.costCard}>
-            <Text style={styles.costCardLabel}>Себестоимость</Text>
-            <Text style={styles.costCardValue}>{formatMoney(cost)}</Text>
-          </View>
-          <View style={styles.costCard}>
-            <Text style={styles.costCardLabel}>Итого к списанию</Text>
-            <Text style={[styles.costCardValue, { color: '#097a3a' }]}>
-              {formatMoney(totalCostAmount)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Dates fields if required */}
-        {needsExpiry && (
-          <View style={styles.expiryGrid}>
-            <View style={styles.expiryInputGroup}>
-              <Text style={styles.wizardFieldLabel}>Дата производства</Text>
-              <TextInput
-                value={form.productionDate}
-                onChangeText={(value) => onSetField('productionDate', value)}
-                placeholder="2026-06-25"
-                style={styles.wizardTextInput}
-              />
-            </View>
-            <View style={styles.expiryInputGroup}>
-              <Text style={styles.wizardFieldLabel}>Годен до</Text>
-              <TextInput
-                value={form.expiryDate}
-                onChangeText={(value) => onSetField('expiryDate', value)}
-                placeholder="2026-06-27"
-                style={styles.wizardTextInput}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Damage fields if required */}
-        {needsDamage && (
-          <View style={styles.damageBox}>
-            <Text style={styles.wizardFieldLabel}>Вид повреждения</Text>
-            <ChipGrid
-              items={[
-                { id: 'Помято' },
-                { id: 'Упало' },
-                { id: 'Порвана упаковка' },
-                { id: 'Прочее' },
-              ]}
-              value={form.damageType}
-              getLabel={(item) => item.id}
-              onChange={(value) => onSetField('damageType', value)}
-            />
-
-            <Text style={styles.wizardFieldLabel}>Когда обнаружено</Text>
-            <ChipGrid
-              items={[
-                { id: 'При приемке' },
-                { id: 'При хранении' },
-                { id: 'В процессе готовки' },
-                { id: 'Прочее' },
-              ]}
-              value={form.damageDiscoveredAt}
-              getLabel={(item) => item.id}
-              onChange={(value) => onSetField('damageDiscoveredAt', value)}
-            />
-          </View>
-        )}
-
-        {/* Deduction Toggle segmented container */}
-        <View style={styles.deductionToggleSegmented}>
-          <Pressable
-            style={[
-              styles.deductionToggleBtn,
-              form.type === 'without_deduction' && styles.deductionToggleBtnActive,
-            ]}
-            onPress={() => onSetField('type', 'without_deduction')}
-          >
-            <Text
-              style={[
-                styles.deductionToggleText,
-                form.type === 'without_deduction' && styles.deductionToggleTextActive,
-              ]}
-            >
-              Без удержания
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.deductionToggleBtn,
-              form.type === 'with_deduction' && styles.deductionToggleBtnActive,
-            ]}
-            onPress={() => onSetField('type', 'with_deduction')}
-          >
-            <Text
-              style={[
-                styles.deductionToggleText,
-                form.type === 'with_deduction' && styles.deductionToggleTextActive,
-              ]}
-            >
-              С удержанием
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Deduction items */}
-        {form.type === 'with_deduction' && (
-          <View style={styles.deductionFieldsContainer}>
-            <Text style={styles.wizardFieldLabel}>Сотрудник для удержания</Text>
-            <View style={styles.deductionEmployeeSelector}>
-              {form.deductionEmployeeId ? (
-                <View style={styles.deductionEmployeeChip}>
-                  <Text style={styles.deductionEmployeeChipIcon}>u</Text>
-                  <Text style={styles.deductionEmployeeChipText}>
-                    {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
-                  </Text>
-                  <Pressable
-                    onPress={() => onSetField('deductionEmployeeId', '')}
-                    style={styles.deductionEmployeeChipClear}
-                  >
-                    <Text style={styles.deductionEmployeeChipClearText}>x</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <ChipGrid
-                  items={data.employees.filter((employee) => employee.role === 'sender')}
-                  value={form.deductionEmployeeId}
-                  getLabel={(item) => item.name}
-                  onChange={(value) => onSetField('deductionEmployeeId', value)}
-                />
-              )}
-            </View>
-
-            <Text style={styles.wizardFieldLabel}>Причина удержания</Text>
-            <TextInput
-              value={form.deductionReason}
-              onChangeText={(value) => onSetField('deductionReason', value)}
-              placeholder="Например: халатность"
-              placeholderTextColor="#999"
-              style={styles.wizardTextInput}
-            />
-          </View>
-        )}
-
-        {/* General Comment */}
-        <Text style={styles.wizardFieldLabel}>Комментарий</Text>
-        <TextInput
-          value={form.comment}
-          onChangeText={(value) => onSetField('comment', value)}
-          placeholder="Например: булочки повреждены при приемке"
-          placeholderTextColor="#999"
-          multiline
-          style={styles.detailsCommentInput}
-        />
-
-        {/* Submit Button */}
-        <Pressable
-          disabled={!canSubmit}
-          style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
-          onPress={onSubmit}
-        >
-          {isSaving ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
-          )}
-        </Pressable>
-      </View>
-    )
-  }
 
   if (formStep === 'wizard') {
     return (
@@ -1278,41 +1374,28 @@ function SenderForm({
         {/* Outlet selector for sender */}
         {cityOutlets.length > 1 && (
           <View style={styles.outletSelectorBox}>
-            <Text style={styles.wizardFieldLabel}>Выберите точку</Text>
-            <View style={styles.outletChipsRow}>
-              {cityOutlets.map((o) => (
-                <Pressable
-                  key={o.id}
-                  style={[
-                    styles.outletChip,
-                    form.outletId === o.id && styles.outletChipActive,
-                  ]}
-                  onPress={() => onSetField('outletId', o.id)}
-                >
-                  <Text
-                    style={[
-                      styles.outletChipText,
-                      form.outletId === o.id && styles.outletChipTextActive,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {o.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <Text style={styles.wizardFieldLabel}>{t(language, 'chooseOutlet')}</Text>
+            <OutletSearch
+              outlets={cityOutlets}
+              value={form.outletId}
+              onChange={(id) => onSetField('outletId', id)}
+              language={language}
+            />
           </View>
         )}
 
         {/* Mode choice card */}
-        <Text style={styles.wizardSectionTitle}>Новая заявка на списание</Text>
+        <Text style={styles.wizardSectionTitle}>{t(language, 'newRequest')}</Text>
         <Text style={styles.wizardSectionSub}>{activeOutletName}</Text>
 
         <View style={styles.modeCardsRow}>
           {/* Manual mode card */}
           <Pressable
             style={styles.modeCard}
-            onPress={() => onFormStepChange('details')}
+            onPress={() => {
+              onSetFormEntryMode('manual')
+              onFormStepChange('details')
+            }}
           >
             <View style={[styles.modeCardIconBox, { backgroundColor: '#fff3e0' }]}>
               <View style={styles.modeCardIconLines}>
@@ -1321,14 +1404,18 @@ function SenderForm({
                 <View style={[styles.modeIconLine, { width: 24 }]} />
               </View>
             </View>
-            <Text style={styles.modeCardTitle}>Вручную</Text>
-            <Text style={styles.modeCardDesc}>Заполните форму самостоятельно</Text>
+            <Text style={styles.modeCardTitle}>{t(language, 'manual')}</Text>
+            <Text style={styles.modeCardDesc}>{t(language, 'manualDesc')}</Text>
           </Pressable>
 
           {/* AI mode card */}
           <Pressable
             style={styles.modeCard}
-            onPress={() => onFormStepChange('choose_mode')}
+            onPress={() => {
+              onSetFormEntryMode('ai')
+              onSetField('extraPhotoUrls', [])
+              onFormStepChange('choose_mode')
+            }}
           >
             <View style={[styles.modeCardIconBox, { backgroundColor: '#e8f5e9' }]}>
               <View style={styles.modeCardAiBrain}>
@@ -1338,176 +1425,368 @@ function SenderForm({
                 <View style={[styles.modeCardAiLine, { width: 14 }]} />
               </View>
             </View>
-            <Text style={styles.modeCardTitle}>С ИИ</Text>
-            <Text style={styles.modeCardDesc}>ИИ заполнит по фото</Text>
+            <Text style={styles.modeCardTitle}>{t(language, 'withAi')}</Text>
+            <Text style={styles.modeCardDesc}>{t(language, 'withAiDesc')}</Text>
           </Pressable>
         </View>
       </View>
     )
   }
 
-  // AI Mode: photo + hint
+  // AI Mode: photo + hint before going to details
   if (formStep === 'choose_mode') {
     return (
       <View style={styles.wizardContainer}>
         <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
-          <Text style={styles.detailsBackText}>{'<'} Назад</Text>
+          <Text style={styles.detailsBackText}>{'<'} {t(language, 'back')}</Text>
         </Pressable>
 
-        <Text style={styles.wizardSectionTitle}>Анализ с ИИ</Text>
-        <Text style={styles.wizardSectionSub}>Сфотографируйте товар — ИИ определит продукт и причину</Text>
+        <Text style={styles.wizardSectionTitle}>{t(language, 'aiAnalysis')}</Text>
+        <Text style={styles.wizardSectionSub}>{t(language, 'aiSubtitle')}</Text>
 
         {/* Photo upload block */}
         <View style={styles.aiPhotoBlock}>
-          <View style={{ position: 'relative' }}>
-            <Pressable onPress={onChoosePhoto} style={styles.aiPhotoPressable}>
-              {form.photoUrl ? (
-                <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
-              ) : (
-                <View style={styles.aiPhotoPlaceholder}>
-                  <CameraIcon />
-                  <Text style={styles.aiPhotoPlaceholderText}>Нажмите чтобы добавить фото</Text>
-                </View>
-              )}
-              {!form.photoUrl && (
-                <View style={styles.aiPhotoPlusBadge}>
-                  <Text style={styles.aiPhotoPlusText}>+</Text>
-                </View>
-              )}
-            </Pressable>
+          <Pressable
+            onPress={() => {
+              if (!photoPickerLocked) onChoosePhoto()
+            }}
+            style={styles.aiPhotoPressable}
+          >
             {form.photoUrl ? (
-              <Pressable
-                onPress={() => {
-                  onSetField('photoUrl', '')
-                  onSetField('photoName', '')
-                  onSetField('photoHash', '')
-                  onHintChange('')
-                }}
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  zIndex: 10,
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: 16, fontFamily: FONT.bold, marginTop: -2 }}>x</Text>
-              </Pressable>
-            ) : null}
-          </View>
+              <>
+                <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
+                <Pressable style={styles.photoRemoveButton} onPress={onRemovePhoto}>
+                  <Text style={styles.photoRemoveText}>x</Text>
+                </Pressable>
+              </>
+            ) : (
+              <View style={styles.aiPhotoPlaceholder}>
+                <View style={styles.aiCameraIcon}>
+                  <View style={styles.aiCameraBody}>
+                    <View style={styles.aiCameraLens} />
+                  </View>
+                </View>
+                <Text style={styles.aiPhotoPlaceholderText}>{t(language, 'tapToAddPhoto')}</Text>
+              </View>
+            )}
+            {!form.photoUrl && (
+              <View style={styles.aiPhotoPlusBadge}>
+                <Text style={styles.aiPhotoPlusText}>+</Text>
+              </View>
+            )}
+          </Pressable>
         </View>
 
         {/* Hint input */}
-        <Text style={styles.wizardFieldLabel}>Описание (подсказка для ИИ)</Text>
+        <Text style={styles.wizardFieldLabel}>{t(language, 'aiHintLabel')}</Text>
         <TextInput
           value={aiHint}
           onChangeText={onHintChange}
-          placeholder="Например: помялось, истек срок, упало"
+          placeholder={t(language, 'aiHintPlaceholder')}
           placeholderTextColor="#999"
           style={styles.wizardTextInput}
         />
 
         {aiResult && <AiResultCard result={aiResult} />}
 
-        {/* Analyze button: disabled if analyzed or no photo */}
-        {!aiResult && (
-          <Pressable
-            disabled={!form.photoUrl || isAnalyzing}
-            style={[styles.wizardProceedBtn, (!form.photoUrl || isAnalyzing) && styles.disabledButton]}
-            onPress={onAnalyze}
-          >
-            {isAnalyzing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.wizardProceedText}>Анализировать фото</Text>
-            )}
-          </Pressable>
-        )}
-
-        {/* Render Form fields inline directly below AI result card if analyzed */}
-        {aiResult && (
-          <View style={{ marginTop: 8 }}>
-            {renderDetailsFields()}
-          </View>
-        )}
+        <Pressable
+          disabled={!canAnalyzePhoto}
+          style={[styles.wizardProceedBtn, !canAnalyzePhoto && styles.disabledButton]}
+          onPress={onAnalyze}
+        >
+          {isAnalyzing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.wizardProceedText}>
+              {currentPhotoAlreadyAnalyzed ? t(language, 'analyzedPhoto') : t(language, 'analyzePhoto')}
+            </Text>
+          )}
+        </Pressable>
       </View>
     )
   }
 
-  // Details form step (Manual Mode Step 2)
+  // Details form step (Step 2)
   return (
     <View style={styles.detailsContainer}>
       {/* Back button only */}
-      <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
-        <Text style={styles.detailsBackText}>{'<-'} Назад</Text>
+      <Pressable
+        onPress={() => onFormStepChange(formEntryMode === 'ai' ? 'choose_mode' : 'wizard')}
+        style={styles.detailsBackBtn}
+      >
+        <Text style={styles.detailsBackText}>{'<-'} {t(language, 'back')}</Text>
       </Pressable>
 
       {/* Photo upload — mandatory for both modes */}
-      <Text style={styles.wizardFieldLabel}>Фото товара <Text style={{ color: '#e53e3e' }}>*</Text></Text>
-      <View style={{ position: 'relative' }}>
-        <Pressable onPress={onChoosePhoto} style={styles.detailsPhotoBlock}>
-          {form.photoUrl ? (
-            <Image source={{ uri: form.photoUrl }} style={styles.detailsPhotoImage} />
-          ) : (
-            <View style={styles.detailsPhotoEmpty}>
-              <View style={styles.detailsPhotoCameraBox}>
-                <CameraIcon />
-              </View>
-              <Text style={styles.detailsPhotoEmptyText}>Нажмите, чтобы добавить фото</Text>
-            </View>
-          )}
-        </Pressable>
+      <Text style={styles.wizardFieldLabel}>{t(language, 'productPhoto')} <Text style={{ color: '#e53e3e' }}>*</Text></Text>
+      <Pressable
+        onPress={() => {
+          if (!photoPickerLocked) onChoosePhoto()
+        }}
+        style={styles.detailsPhotoBlock}
+      >
         {form.photoUrl ? (
-          <Pressable
-            onPress={() => {
-              onSetField('photoUrl', '')
-              onSetField('photoName', '')
-              onSetField('photoHash', '')
-            }}
-            style={{
-              position: 'absolute',
-              top: 10,
-              right: 10,
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 16, fontFamily: FONT.bold, marginTop: -2 }}>x</Text>
-          </Pressable>
-        ) : null}
+          <>
+            <Image source={{ uri: form.photoUrl }} style={styles.detailsPhotoImage} />
+            <Pressable style={styles.photoRemoveButton} onPress={onRemovePhoto}>
+              <Text style={styles.photoRemoveText}>x</Text>
+            </Pressable>
+          </>
+        ) : (
+          <View style={styles.detailsPhotoEmpty}>
+            <View style={styles.detailsPhotoCameraBox}>
+              <View style={styles.aiCameraBody}>
+                <View style={styles.aiCameraLens} />
+              </View>
+            </View>
+            <Text style={styles.detailsPhotoEmptyText}>{t(language, 'tapToAddPhoto')}</Text>
+          </View>
+        )}
+      </Pressable>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
+        {(form.extraPhotoUrls ?? []).map((uri, idx) => (
+          <View key={idx} style={styles.extraPhotoThumb}>
+            <Image source={{ uri }} style={styles.extraPhotoThumbImg} />
+            <Pressable
+              style={styles.extraPhotoRemoveBtn}
+              onPress={() => onSetField('extraPhotoUrls', (form.extraPhotoUrls ?? []).filter((_, i) => i !== idx))}
+            >
+              <Text style={styles.extraPhotoRemoveText}>x</Text>
+            </Pressable>
+          </View>
+        ))}
+        <Pressable onPress={onAddExtraPhoto} style={styles.extraPhotoAddBtn}>
+          <Text style={styles.extraPhotoAddText}>{t(language, 'addPhoto')}</Text>
+        </Pressable>
+      </ScrollView>
+
+      {formEntryMode === 'ai' && aiResult ? <AiResultCard result={aiResult} /> : null}
+
+      <Text style={styles.wizardFieldLabel}>{t(language, 'chooseOutlet')}</Text>
+      <OutletSearch
+        outlets={cityOutlets}
+        value={form.outletId}
+        onChange={(id) => onSetField('outletId', id)}
+        language={language}
+      />
+
+      {/* Product search input */}
+      <Text style={styles.wizardFieldLabel}>{t(language, 'chooseProduct')}</Text>
+      <ProductSearch
+        products={data.products}
+        value={form.productId}
+        onChange={(val) => onSetField('productId', val)}
+        language={language}
+      />
+
+      {/* Quantity entry */}
+      <Text style={styles.wizardFieldLabel}>{t(language, 'quantity')}</Text>
+      <View style={styles.detailsQuantityRow}>
+        <TextInput
+          keyboardType="decimal-pad"
+          value={form.quantity}
+          onChangeText={(value) => onSetField('quantity', value)}
+          placeholder="0"
+          style={styles.detailsQuantityInput}
+        />
+        <View style={styles.detailsUnitBadge}>
+          <Text style={styles.detailsUnitBadgeText}>{selectedProduct?.unit ?? t(language, 'unitPiece')}</Text>
+        </View>
       </View>
 
-      {/* Extra photos strip */}
-      {form.photoUrl ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
-          {(form.extraPhotoUrls ?? []).map((uri, idx) => (
-            <View key={idx} style={styles.extraPhotoThumb}>
-              <Image source={{ uri }} style={styles.extraPhotoThumbImg} />
-              <Pressable
-                style={styles.extraPhotoRemoveBtn}
-                onPress={() => onSetField('extraPhotoUrls', (form.extraPhotoUrls ?? []).filter((_, i) => i !== idx))}
-              >
-                <Text style={styles.extraPhotoRemoveText}>x</Text>
-              </Pressable>
-            </View>
-          ))}
-          <Pressable onPress={onAddExtraPhoto} style={styles.extraPhotoAddBtn}>
-            <Text style={styles.extraPhotoAddText}>+{'\n'}фото</Text>
-          </Pressable>
-        </ScrollView>
-      ) : null}
+      {/* Cost grid side-by-side cards */}
+      <View style={styles.costCardsRow}>
+        <View style={styles.costCard}>
+          <Text style={styles.costCardLabel}>{t(language, 'cost')}</Text>
+          <Text style={styles.costCardValue}>{formatMoney(cost)}</Text>
+        </View>
+        <View style={styles.costCard}>
+          <Text style={styles.costCardLabel}>{t(language, 'writeoffTotal')}</Text>
+          <Text style={[styles.costCardValue, { color: '#097a3a' }]}>
+            {formatMoney(totalCostAmount)}
+          </Text>
+        </View>
+      </View>
 
-      {renderDetailsFields()}
+      {/* Reason selector chips */}
+      <Text style={styles.wizardFieldLabel}>{t(language, 'writeoffReason')}</Text>
+      <View style={styles.reasonsChipsContainer}>
+        {data.reasons.map((item) => {
+          const isSelected = form.reasonId === item.id
+          return (
+            <Pressable
+              key={item.id}
+              style={[
+                styles.reasonChipItem,
+                isSelected && styles.reasonChipItemActive,
+              ]}
+              onPress={() => onSetField('reasonId', item.id)}
+            >
+              <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
+                {item.name}
+              </Text>
+              {isSelected && (
+                <View style={styles.reasonChipCheckDot} />
+              )}
+            </Pressable>
+          )
+        })}
+      </View>
+
+      {/* Dates fields if required */}
+      {needsExpiry && (
+        <View style={styles.expiryGrid}>
+          <View style={styles.expiryInputGroup}>
+            <Text style={styles.wizardFieldLabel}>{t(language, 'productionDate')}</Text>
+            <TextInput
+              value={form.productionDate}
+              onChangeText={(value) => onSetField('productionDate', value)}
+              placeholder="2026-06-25"
+              style={styles.wizardTextInput}
+            />
+          </View>
+          <View style={styles.expiryInputGroup}>
+            <Text style={styles.wizardFieldLabel}>{t(language, 'expiryDate')}</Text>
+            <TextInput
+              value={form.expiryDate}
+              onChangeText={(value) => onSetField('expiryDate', value)}
+              placeholder="2026-06-27"
+              style={styles.wizardTextInput}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Damage fields if required */}
+      {needsDamage && (
+        <View style={styles.damageBox}>
+          <Text style={styles.wizardFieldLabel}>{t(language, 'damageType')}</Text>
+          <ChipGrid
+            items={[
+              { id: 'Помято' },
+              { id: 'Упало' },
+              { id: 'Порвана упаковка' },
+              { id: 'Прочее' },
+            ]}
+            value={form.damageType}
+            getLabel={(item) => item.id}
+            onChange={(value) => onSetField('damageType', value)}
+          />
+
+          <Text style={styles.wizardFieldLabel}>{t(language, 'damageWhen')}</Text>
+          <ChipGrid
+            items={[
+              { id: 'При приемке' },
+              { id: 'При хранении' },
+              { id: 'В процессе готовки' },
+              { id: 'Прочее' },
+            ]}
+            value={form.damageDiscoveredAt}
+            getLabel={(item) => item.id}
+            onChange={(value) => onSetField('damageDiscoveredAt', value)}
+          />
+        </View>
+      )}
+
+      {/* Deduction Toggle segmented container */}
+      <View style={styles.deductionToggleSegmented}>
+        <Pressable
+          style={[
+            styles.deductionToggleBtn,
+            form.type === 'without_deduction' && styles.deductionToggleBtnActive,
+          ]}
+          onPress={() => onSetField('type', 'without_deduction')}
+        >
+          <Text
+            style={[
+              styles.deductionToggleText,
+              form.type === 'without_deduction' && styles.deductionToggleTextActive,
+            ]}
+          >
+            {t(language, 'noDeduction')}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.deductionToggleBtn,
+            form.type === 'with_deduction' && styles.deductionToggleBtnActive,
+          ]}
+          onPress={() => onSetField('type', 'with_deduction')}
+        >
+          <Text
+            style={[
+              styles.deductionToggleText,
+              form.type === 'with_deduction' && styles.deductionToggleTextActive,
+            ]}
+          >
+            {t(language, 'withDeduction')}
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Deduction items */}
+      {form.type === 'with_deduction' && (
+        <View style={styles.deductionFieldsContainer}>
+          <Text style={styles.wizardFieldLabel}>{t(language, 'deductionEmployee')}</Text>
+          <View style={styles.deductionEmployeeSelector}>
+            {form.deductionEmployeeId ? (
+              <View style={styles.deductionEmployeeChip}>
+                <Text style={styles.deductionEmployeeChipIcon}>u</Text>
+                <Text style={styles.deductionEmployeeChipText}>
+                  {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
+                </Text>
+                <Pressable
+                  onPress={() => onSetField('deductionEmployeeId', '')}
+                  style={styles.deductionEmployeeChipClear}
+                >
+                  <Text style={styles.deductionEmployeeChipClearText}>x</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <ChipGrid
+                items={data.employees.filter((employee) => employee.role === 'sender')}
+                value={form.deductionEmployeeId}
+                getLabel={(item) => item.name}
+                onChange={(value) => onSetField('deductionEmployeeId', value)}
+              />
+            )}
+          </View>
+
+          <Text style={styles.wizardFieldLabel}>{t(language, 'deductionReason')}</Text>
+          <TextInput
+            value={form.deductionReason}
+            onChangeText={(value) => onSetField('deductionReason', value)}
+            placeholder={t(language, 'deductionPlaceholder')}
+            placeholderTextColor="#999"
+            style={styles.wizardTextInput}
+          />
+        </View>
+      )}
+
+      {/* General Comment */}
+      <Text style={styles.wizardFieldLabel}>{t(language, 'comment')}</Text>
+      <TextInput
+        value={form.comment}
+        onChangeText={(value) => onSetField('comment', value)}
+        placeholder={t(language, 'commentPlaceholder')}
+        placeholderTextColor="#999"
+        multiline
+        style={styles.detailsCommentInput}
+      />
+
+      {/* Submit Button */}
+      <Pressable
+        disabled={!canSubmit}
+        style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
+        onPress={onSubmit}
+      >
+        {isSaving ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.detailsSubmitText}>{t(language, 'submitForReview')}</Text>
+        )}
+      </Pressable>
     </View>
   )
 }
@@ -1529,6 +1808,7 @@ function ReviewerView({
   onToggleSelect,
   onBulkApprove,
   onClearSelection,
+  language,
 }: {
   request?: WriteOffRequest
   pendingRequests: WriteOffRequest[]
@@ -1546,11 +1826,70 @@ function ReviewerView({
   onToggleSelect: (id: string) => void
   onBulkApprove: () => void
   onClearSelection: () => void
+  language: Language
 }) {
+  const [isListening, setIsListening] = useState(false)
+  const speechRef = useRef<{ stop: () => void } | null>(null)
+
+  function handleVoiceReason() {
+    if (isListening) {
+      speechRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+
+    type SpeechRecognitionInstance = {
+      lang: string
+      interimResults: boolean
+      maxAlternatives: number
+      start: () => void
+      stop: () => void
+      onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+      onerror: (() => void) | null
+      onend: (() => void) | null
+    }
+    type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance
+    const SpeechRecognition = (
+      Platform.OS === 'web'
+        ? ((globalThis as Record<string, unknown>).SpeechRecognition ??
+          (globalThis as Record<string, unknown>).webkitSpeechRecognition)
+        : undefined
+    ) as SpeechRecognitionConstructor | undefined
+
+    if (!SpeechRecognition) {
+      Alert.alert(t(language, 'speechUnsupportedTitle'), t(language, 'speechUnsupportedMessage'))
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = language === 'kk' ? 'kk-KZ' : 'ru-RU'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim()
+      if (transcript) {
+        const nextValue = rejectionDraft.trim()
+          ? `${rejectionDraft.trim()} ${transcript}`
+          : transcript
+        onRejectionChange(nextValue)
+      }
+    }
+    recognition.onerror = () => {
+      Alert.alert(t(language, 'speechUnsupportedTitle'), t(language, 'speechError'))
+    }
+    recognition.onend = () => {
+      setIsListening(false)
+      speechRef.current = null
+    }
+    speechRef.current = recognition
+    setIsListening(true)
+    recognition.start()
+  }
+
   if (!request) {
     return (
       <View style={styles.emptyBox}>
-        <Text style={styles.emptyTitle}>Очередь пуста</Text>
+        <Text style={styles.emptyTitle}>{t(language, 'queueEmpty')}</Text>
       </View>
     )
   }
@@ -1558,27 +1897,30 @@ function ReviewerView({
   const product = products.find((item) => item.id === request.productId)
   const outlet = outlets.find((item) => item.id === request.outletId)
   const amount = product ? request.quantity * product.cost : 0
+  const quickRejectReasons = language === 'kk'
+    ? ['Сапасыз фото', 'Негіз жеткіліксіз', 'Жеке талқылаймыз']
+    : rejectReasons
 
   return (
     <View style={styles.reviewPanel}>
       <View style={styles.panelHeader}>
-        <Text style={styles.panelTitle}>Очередь проверки</Text>
-        <Text style={styles.panelDetail}>pending · {pendingRequests.length}</Text>
+        <Text style={styles.panelTitle}>{t(language, 'reviewQueue')}</Text>
+        <Text style={styles.panelDetail}>{t(language, 'pendingLabel')} · {pendingRequests.length}</Text>
       </View>
 
       {selectedIds.length > 0 ? (
         <View style={styles.selectionBar}>
-          <Text style={styles.selectionText}>Выбрано: {selectedIds.length}</Text>
+          <Text style={styles.selectionText}>{t(language, 'selected', { count: selectedIds.length })}</Text>
           <View style={styles.selectionActions}>
             <Pressable style={styles.selectionGhost} onPress={onClearSelection}>
-              <Text style={styles.selectionGhostText}>Снять</Text>
+              <Text style={styles.selectionGhostText}>{t(language, 'clear')}</Text>
             </Pressable>
             <Pressable
               disabled={isSaving}
               style={[styles.selectionApprove, isSaving && styles.disabledButton]}
               onPress={onBulkApprove}
             >
-              <Text style={styles.selectionApproveText}>Подтвердить</Text>
+              <Text style={styles.selectionApproveText}>{t(language, 'approve')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1591,6 +1933,7 @@ function ReviewerView({
             request={item}
             product={products.find((productItem) => productItem.id === item.productId)}
             outlet={outlets.find((outletItem) => outletItem.id === item.outletId)}
+            language={language}
             active={item.id === request.id}
             selected={selectedIds.includes(item.id)}
             selectionMode={selectionMode}
@@ -1600,28 +1943,38 @@ function ReviewerView({
         ))}
       </View>
 
-      <Image source={{ uri: request.photoUrl }} style={styles.reviewPhoto} />
-      <Text style={styles.reviewTitle}>#{request.id} · {product?.name ?? 'Продукт'}</Text>
+      <RequestPhotoBlock request={request} imageStyle={styles.reviewPhoto} />
+      <Text style={styles.reviewTitle}>#{request.id} · {product?.name ?? t(language, 'product')}</Text>
       <Text style={styles.requestMeta}>{outlet?.name ?? 'Bahandi'}</Text>
       <Text style={styles.reviewInfo}>
-        {request.quantity} {request.unit} · {request.type === 'with_deduction' ? 'с удержанием' : 'без удержания'}
+        {request.quantity} {request.unit} · {request.type === 'with_deduction' ? t(language, 'withDeduction').toLowerCase() : t(language, 'noDeduction').toLowerCase()}
       </Text>
       {product ? (
-        <Text style={styles.requestMeta}>{formatMoney(amount)} по себестоимости</Text>
+        <Text style={styles.requestMeta}>{formatMoney(amount)} {t(language, 'atCost')}</Text>
       ) : null}
       <Text style={styles.commentText}>{request.comment}</Text>
 
-      <Text style={styles.label}>Причина отклонения</Text>
+      <View style={styles.voiceLabelRow}>
+        <Text style={styles.label}>{t(language, 'rejectionReason')}</Text>
+        <Pressable
+          style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
+          onPress={handleVoiceReason}
+        >
+          <Text style={[styles.voiceButtonText, isListening && styles.voiceButtonTextActive]}>
+            {isListening ? t(language, 'micStop') : t(language, 'micStart')}
+          </Text>
+        </Pressable>
+      </View>
       <TextInput
         value={rejectionDraft}
         onChangeText={onRejectionChange}
-        placeholder="Например: фото не подтверждает количество"
+        placeholder={t(language, 'rejectionPlaceholder')}
         multiline
         style={[styles.input, styles.commentInput]}
       />
 
       <View style={styles.quickReasonGrid}>
-        {rejectReasons.map((reason) => (
+        {quickRejectReasons.map((reason) => (
           <Pressable
             key={reason}
             style={styles.quickReasonChip}
@@ -1639,14 +1992,14 @@ function ReviewerView({
           style={[styles.rejectButton, isSaving && styles.disabledButton]}
           onPress={() => onReject(request.id)}
         >
-          <Text style={styles.rejectText}>Отклонить</Text>
+          <Text style={styles.rejectText}>{t(language, 'reject')}</Text>
         </Pressable>
         <Pressable
           disabled={isSaving}
           style={[styles.approveButton, isSaving && styles.disabledButton]}
           onPress={() => onApprove(request.id)}
         >
-          <Text style={styles.approveText}>Подтвердить</Text>
+          <Text style={styles.approveText}>{t(language, 'approve')}</Text>
         </Pressable>
       </View>
     </View>
@@ -1712,6 +2065,7 @@ function ReviewerQueueCard({
   request,
   product,
   outlet,
+  language,
   active,
   selected,
   selectionMode,
@@ -1721,6 +2075,7 @@ function ReviewerQueueCard({
   request: WriteOffRequest
   product?: Product
   outlet?: Outlet
+  language: Language
   active: boolean
   selected: boolean
   selectionMode: boolean
@@ -1738,7 +2093,7 @@ function ReviewerQueueCard({
       onLongPress={onLongPress}
     >
       <View style={styles.queueCardBody}>
-        <Text style={styles.queueTitle}>#{request.id} · {product?.name ?? 'Продукт'}</Text>
+        <Text style={styles.queueTitle}>#{request.id} · {product?.name ?? t(language, 'product')}</Text>
         <Text style={styles.requestMeta}>{outlet?.name ?? 'Bahandi'}</Text>
         <Text style={styles.requestMeta}>
           {request.quantity} {request.unit} · {new Date(request.createdAt).toLocaleTimeString('ru-RU', {
@@ -1756,13 +2111,67 @@ function ReviewerQueueCard({
   )
 }
 
+function getRequestPhotos(request: WriteOffRequest) {
+  const photos = request.photoUrls?.length ? request.photoUrls : [request.photoUrl]
+  return [...new Set(photos.filter(Boolean))]
+}
+
+function RequestPhotoBlock({
+  request,
+  imageStyle,
+  variant = 'hero',
+}: {
+  request: WriteOffRequest
+  imageStyle: object
+  variant?: 'hero' | 'grid'
+}) {
+  const photos = getRequestPhotos(request)
+
+  if (variant === 'grid' && photos.length > 1) {
+    return (
+      <View style={styles.requestPhotoGrid}>
+        {photos.slice(0, 4).map((uri, index) => (
+          <Image
+            key={`${uri}-${index}`}
+            source={{ uri }}
+            style={[
+              styles.requestPhotoGridImage,
+              photos.length === 2 && styles.requestPhotoGridImageHalf,
+              photos.length >= 3 && index === 0 && styles.requestPhotoGridImageLarge,
+            ]}
+          />
+        ))}
+      </View>
+    )
+  }
+
+  return (
+    <View style={styles.requestPhotoBlock}>
+      <Image source={{ uri: photos[0] }} style={imageStyle} />
+      {photos.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.requestPhotoThumbRow}>
+          {photos.map((uri, index) => (
+            <Image
+              key={`${uri}-${index}`}
+              source={{ uri }}
+              style={styles.requestPhotoThumb}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+    </View>
+  )
+}
+
 function RequestList({
   requests,
   products,
+  language,
   onSelect,
 }: {
   requests: WriteOffRequest[]
   products: Product[]
+  language: Language
   onSelect?: (request: WriteOffRequest) => void
 }) {
   return (
@@ -1772,27 +2181,17 @@ function RequestList({
           key={request.id}
           request={request}
           productName={
-            products.find((product) => product.id === request.productId)?.name ?? 'Продукт'
+            products.find((product) => product.id === request.productId)?.name ?? t(language, 'product')
           }
+          language={language}
           onPress={onSelect ? () => onSelect(request) : undefined}
         />
       ))}
       {!requests.length ? (
         <View style={styles.emptyBox}>
-          <Text style={styles.emptyTitle}>Заявок пока нет</Text>
+          <Text style={styles.emptyTitle}>{t(language, 'noRequests')}</Text>
         </View>
       ) : null}
-    </View>
-  )
-}
-
-function CameraIcon() {
-  return (
-    <View style={styles.aiCameraIcon}>
-      <View style={styles.aiCameraBody}>
-        <View style={styles.aiCameraLens} />
-      </View>
-      <View style={styles.aiCameraTop} />
     </View>
   )
 }
@@ -1804,6 +2203,35 @@ function BahandiLogo() {
       <View style={styles.logoBlackLine} />
       <Text style={styles.logoText}>BAHANDI</Text>
       <View style={[styles.logoStripe, styles.logoStripeRight]} />
+    </View>
+  )
+}
+
+function LanguageToggle({
+  language,
+  onChange,
+  compact = false,
+}: {
+  language: Language
+  onChange: (language: Language) => void
+  compact?: boolean
+}) {
+  return (
+    <View style={[styles.languageToggle, compact && styles.languageToggleCompact]}>
+      {(['ru', 'kk'] as Language[]).map((item) => {
+        const active = item === language
+        return (
+          <Pressable
+            key={item}
+            style={[styles.languageButton, active && styles.languageButtonActive]}
+            onPress={() => onChange(item)}
+          >
+            <Text style={[styles.languageButtonText, active && styles.languageButtonTextActive]}>
+              {item === 'ru' ? 'RU' : 'KZ'}
+            </Text>
+          </Pressable>
+        )
+      })}
     </View>
   )
 }
@@ -1874,10 +2302,12 @@ function ProductSearch({
   products,
   value,
   onChange,
+  language,
 }: {
   products: Product[]
   value: string
   onChange: (id: string) => void
+  language: Language
 }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -1906,7 +2336,7 @@ function ProductSearch({
           setOpen(true)
           setQuery('')
         }}
-        placeholder="Начните вводить название..."
+        placeholder={t(language, 'productSearchPlaceholder')}
         style={styles.input}
         returnKeyType="search"
       />
@@ -1914,7 +2344,7 @@ function ProductSearch({
         <View style={styles.productDropdown}>
           <ScrollView keyboardShouldPersistTaps="handled" style={styles.productDropdownScroll}>
             {filtered.length === 0 ? (
-              <Text style={styles.productDropdownEmpty}>Ничего не найдено</Text>
+              <Text style={styles.productDropdownEmpty}>{t(language, 'noResults')}</Text>
             ) : (
               filtered.map((p) => (
                 <Pressable
@@ -1936,15 +2366,95 @@ function ProductSearch({
   )
 }
 
+function OutletSearch({
+  outlets,
+  value,
+  onChange,
+  language,
+}: {
+  outlets: Outlet[]
+  value: string
+  onChange: (id: string) => void
+  language: Language
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const selected = outlets.find((outlet) => outlet.id === value)
+  const normalized = query.trim().toLowerCase()
+  const filtered = normalized
+    ? outlets.filter((outlet) =>
+      [outlet.name, outlet.address, outlet.city]
+        .some((part) => part.toLowerCase().includes(normalized)),
+    )
+    : outlets
+
+  function selectOutlet(id: string) {
+    onChange(id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <View style={styles.outletSearchBox}>
+      <TextInput
+        value={open ? query : (selected?.name ?? '')}
+        onChangeText={(text) => {
+          setQuery(text)
+          setOpen(true)
+        }}
+        onFocus={() => {
+          setOpen(true)
+          setQuery('')
+        }}
+        placeholder={t(language, 'outletSearchPlaceholder')}
+        placeholderTextColor="#999"
+        style={styles.input}
+        returnKeyType="search"
+      />
+      <Text style={styles.outletSearchHint}>
+        {t(language, 'outletsAvailable', { count: outlets.length })}
+      </Text>
+      {open && (
+        <View style={styles.outletDropdown}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.outletDropdownScroll}>
+            {filtered.length === 0 ? (
+              <Text style={styles.productDropdownEmpty}>{t(language, 'noOutletsFound')}</Text>
+            ) : (
+              filtered.map((outlet) => {
+                const active = outlet.id === value
+                return (
+                  <Pressable
+                    key={outlet.id}
+                    style={[styles.outletDropdownItem, active && styles.productDropdownItemActive]}
+                    onPress={() => selectOutlet(outlet.id)}
+                  >
+                    <Text style={[styles.productDropdownText, active && styles.productDropdownTextActive]}>
+                      {outlet.name}
+                    </Text>
+                    <Text style={styles.outletDropdownAddress}>{outlet.address}</Text>
+                  </Pressable>
+                )
+              })
+            )}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  )
+}
+
 function RequestCard({
   request,
   productName,
+  language,
   onPress,
 }: {
   request: WriteOffRequest
   productName: string
+  language: Language
   onPress?: () => void
 }) {
+  const photos = getRequestPhotos(request)
   const formattedDate = useMemo(() => {
     try {
       const d = new Date(request.createdAt)
@@ -1963,7 +2473,14 @@ function RequestCard({
       style={[styles.requestCard, onPress && styles.requestCardInteractive]}
       onPress={onPress}
     >
-      <Image source={{ uri: request.photoUrl }} style={styles.requestPhoto} />
+      <View style={styles.requestPhotoPreview}>
+        <Image source={{ uri: photos[0] }} style={styles.requestPhoto} />
+        {photos.length > 1 ? (
+          <View style={styles.requestPhotoCountBadge}>
+            <Text style={styles.requestPhotoCountText}>{photos.length}</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={styles.requestBody}>
         <Text style={styles.requestTitle} numberOfLines={1}>
           #{request.id} · {productName}
@@ -1974,7 +2491,7 @@ function RequestCard({
         <View style={styles.requestStatusBadgeRow}>
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor[request.status]}10`, borderColor: `${statusColor[request.status]}30` }]}>
             <Text style={[styles.statusText, { color: statusColor[request.status] }]}>
-              {statusCopy[request.status]}
+              {getStatusCopy(request.status, language)}
             </Text>
           </View>
         </View>
@@ -1992,12 +2509,14 @@ function StatsView({
   outlets,
   employees,
   reasons,
+  language,
 }: {
   requests: WriteOffRequest[]
   products: Product[]
   outlets: Outlet[]
   employees: Employee[]
   reasons: Reason[]
+  language: Language
 }) {
   const [activeTab, setActiveTab] = useState<StatsTab>('outlets')
 
@@ -2008,7 +2527,7 @@ function StatsView({
 
   // Pre-calculate requests statistics
   const approvedRequests = useMemo(() => requests.filter((r) => r.status === 'approved'), [requests])
-  
+
   const totalSum = useMemo(() => {
     return approvedRequests.reduce((sum, r) => sum + r.quantity * getProductCost(r.productId), 0)
   }, [approvedRequests, products])
@@ -2017,7 +2536,7 @@ function StatsView({
   const approvedCount = approvedRequests.length
   const rejectedCount = useMemo(() => requests.filter((r) => r.status === 'rejected').length, [requests])
   const pendingCount = useMemo(() => requests.filter((r) => r.status === 'pending').length, [requests])
-  
+
   const avgRequestSum = approvedCount > 0 ? totalSum / approvedCount : 0
 
   const deductionsSum = useMemo(() => {
@@ -2086,34 +2605,63 @@ function StatsView({
     return reasonStats[0]?.amount ?? 1
   }, [activeTab, outletStats, employeeStats, reasonStats])
 
+  async function exportStats() {
+    const activeRows =
+      activeTab === 'outlets'
+        ? outletStats.map((item) => `${item.name}; ${item.city}; ${formatMoney(item.amount)}`)
+        : activeTab === 'employees'
+          ? employeeStats.map((item) => `${item.name}; ${item.role}; ${formatMoney(item.amount)}`)
+          : reasonStats.map((item) => `${item.name}; ${formatMoney(item.amount)}`)
+
+    const message = [
+      t(language, 'statsTitle'),
+      `${t(language, 'totalWriteoff')}: ${formatMoney(totalSum)}`,
+      `${t(language, 'totalDeductions')}: ${formatMoney(deductionsSum)}`,
+      `${t(language, 'avgWriteoff')}: ${formatMoney(avgRequestSum)}`,
+      `${t(language, 'allRequests')}: ${totalCount}`,
+      '',
+      activeRows.join('\n') || '-',
+    ].join('\n')
+
+    await Share.share({
+      title: t(language, 'exportTitle'),
+      message,
+    })
+  }
+
   return (
     <View style={styles.statsContainer}>
-      <Text style={styles.statsTitleHeader}>Сводные данные (утверждено)</Text>
+      <View style={styles.statsHeaderRow}>
+        <Text style={styles.statsTitleHeader}>{t(language, 'statsTitle')}</Text>
+        <Pressable style={styles.statsExportButton} onPress={() => void exportStats()}>
+          <Text style={styles.statsExportText}>{t(language, 'export')}</Text>
+        </Pressable>
+      </View>
 
       {/* Grid of KPI cards */}
       <View style={styles.kpiGrid}>
         <View style={[styles.kpiCard, { borderColor: '#22c55e' }]}>
-          <Text style={styles.kpiLabel}>Сумма списаний</Text>
+          <Text style={styles.kpiLabel}>{t(language, 'totalWriteoff')}</Text>
           <Text style={[styles.kpiValue, { color: '#15803d' }]}>{formatMoney(totalSum)}</Text>
         </View>
 
         <View style={[styles.kpiCard, { borderColor: '#ef4444' }]}>
-          <Text style={styles.kpiLabel}>Сумма удержаний</Text>
+          <Text style={styles.kpiLabel}>{t(language, 'totalDeductions')}</Text>
           <Text style={[styles.kpiValue, { color: '#b91c1c' }]}>{formatMoney(deductionsSum)}</Text>
         </View>
       </View>
 
       <View style={styles.kpiGrid}>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Среднее списание</Text>
+          <Text style={styles.kpiLabel}>{t(language, 'avgWriteoff')}</Text>
           <Text style={styles.kpiValue}>{formatMoney(avgRequestSum)}</Text>
         </View>
 
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Всего заявок</Text>
-          <Text style={styles.kpiValue}>{totalCount} шт</Text>
+          <Text style={styles.kpiLabel}>{t(language, 'allRequests')}</Text>
+          <Text style={styles.kpiValue}>{totalCount} {t(language, 'unitPiece')}</Text>
           <Text style={styles.kpiSubText}>
-            Утв: {approvedCount} · Откл: {rejectedCount} · Ожид: {pendingCount}
+            {t(language, 'approvedShort')}: {approvedCount} · {t(language, 'rejectedShort')}: {rejectedCount} · {t(language, 'pendingShort')}: {pendingCount}
           </Text>
         </View>
       </View>
@@ -2125,7 +2673,7 @@ function StatsView({
           onPress={() => setActiveTab('outlets')}
         >
           <Text style={[styles.statsTabText, activeTab === 'outlets' && styles.statsTabTextActive]}>
-            По точкам
+            {t(language, 'byOutlets')}
           </Text>
         </Pressable>
         <Pressable
@@ -2133,7 +2681,7 @@ function StatsView({
           onPress={() => setActiveTab('employees')}
         >
           <Text style={[styles.statsTabText, activeTab === 'employees' && styles.statsTabTextActive]}>
-            Сотрудники
+            {t(language, 'employees')}
           </Text>
         </Pressable>
         <Pressable
@@ -2141,7 +2689,7 @@ function StatsView({
           onPress={() => setActiveTab('reasons')}
         >
           <Text style={[styles.statsTabText, activeTab === 'reasons' && styles.statsTabTextActive]}>
-            Причины
+            {t(language, 'reasons')}
           </Text>
         </Pressable>
       </View>
@@ -2151,7 +2699,7 @@ function StatsView({
         {activeTab === 'outlets' && (
           <>
             {outletStats.length === 0 ? (
-              <Text style={styles.emptyStatsText}>Нет данных по точкам</Text>
+              <Text style={styles.emptyStatsText}>{t(language, 'noOutletStats')}</Text>
             ) : (
               outletStats.map((item) => {
                 const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
@@ -2175,7 +2723,7 @@ function StatsView({
         {activeTab === 'employees' && (
           <>
             {employeeStats.length === 0 ? (
-              <Text style={styles.emptyStatsText}>Нет данных по сотрудникам</Text>
+              <Text style={styles.emptyStatsText}>{t(language, 'noEmployeeStats')}</Text>
             ) : (
               employeeStats.map((item) => {
                 const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
@@ -2186,7 +2734,7 @@ function StatsView({
                       <Text style={styles.chartItemValue}>{formatMoney(item.amount)}</Text>
                     </View>
                     <Text style={styles.chartItemSubText}>
-                      {item.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
+                      {item.role === 'sender' ? t(language, 'employeeRole') : t(language, 'reviewerRole')}
                     </Text>
                     <View style={styles.progressBarBg}>
                       <View style={[styles.progressBarFill, { width: `${pct}%`, backgroundColor: '#10b981' }]} />
@@ -2201,7 +2749,7 @@ function StatsView({
         {activeTab === 'reasons' && (
           <>
             {reasonStats.length === 0 ? (
-              <Text style={styles.emptyStatsText}>Нет данных по причинам</Text>
+              <Text style={styles.emptyStatsText}>{t(language, 'noReasonStats')}</Text>
             ) : (
               reasonStats.map((item) => {
                 const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
@@ -2253,6 +2801,7 @@ function AddEmployeeModal({
   onSave,
   isSaving,
   error,
+  language,
 }: {
   visible: boolean
   onClose: () => void
@@ -2267,6 +2816,7 @@ function AddEmployeeModal({
   onSave: () => void
   isSaving: boolean
   error: string
+  language: Language
 }) {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -2274,13 +2824,13 @@ function AddEmployeeModal({
         <View style={styles.detailSheet}>
           <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
             <View style={styles.detailTitleRow}>
-              <Text style={styles.detailTitle}>Новый сотрудник</Text>
+              <Text style={styles.detailTitle}>{t(language, 'newEmployee')}</Text>
               <Pressable onPress={onClose} style={{ padding: 8 }}>
                 <Text style={styles.detailCloseText}>x</Text>
               </Pressable>
             </View>
 
-            <Text style={styles.label}>ФИО сотрудника</Text>
+            <Text style={styles.label}>{t(language, 'fullName')}</Text>
             <TextInput
               value={name}
               onChangeText={onNameChange}
@@ -2288,7 +2838,7 @@ function AddEmployeeModal({
               style={styles.input}
             />
 
-            <Text style={styles.label}>Город</Text>
+            <Text style={styles.label}>{t(language, 'city')}</Text>
             <ChipGrid
               items={CITIES.map((c) => ({ id: c }))}
               value={city}
@@ -2296,7 +2846,7 @@ function AddEmployeeModal({
               onChange={(val) => onCityChange(val)}
             />
 
-            <Text style={styles.label}>Логин</Text>
+            <Text style={styles.label}>{t(language, 'login')}</Text>
             <TextInput
               value={login}
               onChangeText={onLoginChange}
@@ -2306,7 +2856,7 @@ function AddEmployeeModal({
               style={styles.input}
             />
 
-            <Text style={styles.label}>Пин-код (4–6 цифр)</Text>
+            <Text style={styles.label}>{t(language, 'pin')} (4-6)</Text>
             <TextInput
               value={pin}
               onChangeText={onPinChange}
@@ -2325,7 +2875,7 @@ function AddEmployeeModal({
 
             <View style={styles.addEmpActions}>
               <Pressable style={styles.secondaryButton} onPress={onClose}>
-                <Text style={styles.secondaryText}>Отмена</Text>
+                <Text style={styles.secondaryText}>{t(language, 'cancel')}</Text>
               </Pressable>
               <Pressable
                 disabled={isSaving}
@@ -2333,7 +2883,7 @@ function AddEmployeeModal({
                 onPress={onSave}
               >
                 {isSaving ? <ActivityIndicator color="#ffffff" /> : null}
-                <Text style={styles.submitText}>Сохранить</Text>
+                <Text style={styles.submitText}>{t(language, 'save')}</Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -2349,6 +2899,7 @@ function RequestDetailModal({
   outlets,
   reasons,
   employees,
+  language,
   onClose,
 }: {
   request?: WriteOffRequest
@@ -2356,16 +2907,9 @@ function RequestDetailModal({
   outlets: Outlet[]
   reasons: Reason[]
   employees: Employee[]
+  language: Language
   onClose: () => void
 }) {
-  const [activePhoto, setActivePhoto] = useState(request?.photoUrl ?? '')
-
-  useEffect(() => {
-    if (request) {
-      setActivePhoto(request.photoUrl)
-    }
-  }, [request])
-
   const product = request
     ? products.find((item) => item.id === request.productId)
     : undefined
@@ -2394,77 +2938,51 @@ function RequestDetailModal({
         <View style={styles.detailSheet}>
           {request ? (
             <ScrollView contentContainerStyle={styles.detailContent}>
-              <Image source={{ uri: activePhoto || request.photoUrl }} style={styles.detailPhoto} />
-              
-              {request.extraPhotoUrls && request.extraPhotoUrls.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 8, marginBottom: 8, paddingHorizontal: 4 }}>
-                  <Pressable onPress={() => setActivePhoto(request.photoUrl)}>
-                    <Image
-                      source={{ uri: request.photoUrl }}
-                      style={[
-                        { width: 68, height: 68, borderRadius: 10, marginRight: 8, borderWidth: 2, borderColor: '#e2e8f0' },
-                        (activePhoto === request.photoUrl || !activePhoto) && { borderColor: '#0d803d' }
-                      ]}
-                    />
-                  </Pressable>
-                  {request.extraPhotoUrls.map((uri, idx) => (
-                    <Pressable key={idx} onPress={() => setActivePhoto(uri)}>
-                      <Image
-                        source={{ uri }}
-                        style={[
-                          { width: 68, height: 68, borderRadius: 10, marginRight: 8, borderWidth: 2, borderColor: '#e2e8f0' },
-                          activePhoto === uri && { borderColor: '#0d803d' }
-                        ]}
-                      />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-
+              <RequestPhotoBlock request={request} imageStyle={styles.detailPhoto} variant="grid" />
               <View style={styles.detailTitleRow}>
                 <View style={styles.detailTitleText}>
-                  <Text style={styles.detailKicker}>Заявка #{request.id}</Text>
-                  <Text style={styles.detailTitle}>{product?.name ?? 'Продукт'}</Text>
+                  <Text style={styles.detailKicker}>{t(language, 'request')} #{request.id}</Text>
+                  <Text style={styles.detailTitle}>{product?.name ?? t(language, 'product')}</Text>
                 </View>
                 <View style={[styles.statusBadge, { backgroundColor: `${statusColor[request.status]}18` }]}>
                   <Text style={[styles.statusText, { color: statusColor[request.status] }]}>
-                    {statusCopy[request.status]}
+                    {getStatusCopy(request.status, language)}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.detailGrid}>
-                <DetailItem label="Точка" value={outlet?.name ?? 'Bahandi'} />
-                <DetailItem label="Адрес" value={outlet?.address ?? 'Адрес не указан'} />
-                <DetailItem label="Количество" value={`${request.quantity} ${request.unit}`} />
-                <DetailItem label="Сумма" value={formatMoney(amount)} />
-                <DetailItem label="Причина" value={reason?.name ?? 'Не указана'} />
+                <DetailItem label={t(language, 'outlet')} value={outlet?.name ?? 'Bahandi'} />
+                <DetailItem label={t(language, 'address')} value={outlet?.address ?? t(language, 'addressEmpty')} />
+                <DetailItem label={t(language, 'quantity')} value={`${request.quantity} ${request.unit}`} />
+                <DetailItem label={t(language, 'amount')} value={formatMoney(amount)} />
+                <DetailItem label={t(language, 'writeoffReason')} value={reason?.name ?? t(language, 'notSpecified')} />
                 <DetailItem
-                  label="Тип"
-                  value={request.type === 'with_deduction' ? 'С удержанием' : 'Без удержания'}
+                  label={t(language, 'type')}
+                  value={request.type === 'with_deduction' ? t(language, 'withDeduction') : t(language, 'noDeduction')}
                 />
-                <DetailItem label="Отправил" value={sender?.name ?? request.createdById} />
+                <DetailItem label={t(language, 'sentBy')} value={sender?.name ?? request.createdById} />
                 <DetailItem
-                  label="Создано"
+                  label={t(language, 'createdAt')}
                   value={new Date(request.createdAt).toLocaleString('ru-RU')}
                 />
-                {reviewer ? <DetailItem label="Проверил" value={reviewer.name} /> : null}
+                {reviewer ? <DetailItem label={t(language, 'reviewedBy')} value={reviewer.name} /> : null}
                 {request.reviewedAt ? (
                   <DetailItem
-                    label="Проверено"
+                    label={t(language, 'reviewedAt')}
                     value={new Date(request.reviewedAt).toLocaleString('ru-RU')}
                   />
                 ) : null}
               </View>
 
               <View style={styles.detailNote}>
-                <Text style={styles.detailNoteLabel}>Комментарий</Text>
-                <Text style={styles.detailNoteText}>{request.comment || 'Нет комментария'}</Text>
+                <Text style={styles.detailNoteLabel}>{t(language, 'comment')}</Text>
+                <Text style={styles.detailNoteText}>{request.comment || t(language, 'noComment')}</Text>
               </View>
 
               {request.rejectionReason ? (
                 <View style={styles.detailRejectNote}>
-                  <Text style={styles.detailRejectLabel}>Причина отклонения</Text>
+                  <Text style={styles.detailRejectLabel}>{t(language, 'rejectionReason')}</Text>
                   <Text style={styles.detailRejectText}>{request.rejectionReason}</Text>
                 </View>
               ) : null}
@@ -2477,7 +2995,7 @@ function RequestDetailModal({
               ) : null}
 
               <Pressable style={styles.detailCloseButton} onPress={onClose}>
-                <Text style={styles.detailCloseText}>Закрыть</Text>
+                <Text style={styles.detailCloseText}>{t(language, 'close')}</Text>
               </Pressable>
             </ScrollView>
           ) : null}
@@ -2682,9 +3200,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 14,
-    backgroundColor: '#ffffff',
-    borderBottomColor: '#dee2e6',
-    borderBottomWidth: 1,
+    backgroundColor: 'transparent',
   },
   logo: {
     position: 'relative',
@@ -2733,6 +3249,39 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: FONT.semi,
     letterSpacing: 0,
+  },
+  languageToggle: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    gap: 4,
+    padding: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#d8dee6',
+    backgroundColor: '#ffffff',
+  },
+  languageToggleCompact: {
+    marginLeft: 'auto',
+    borderColor: 'rgba(255,255,255,0.42)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  languageButton: {
+    minWidth: 38,
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+  },
+  languageButtonActive: {
+    backgroundColor: '#0d803d',
+  },
+  languageButtonText: {
+    color: '#5f6b76',
+    fontSize: 12,
+    fontFamily: FONT.bold,
+  },
+  languageButtonTextActive: {
+    color: '#ffffff',
   },
   content: {
     gap: 14,
@@ -3261,6 +3810,37 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#f8f8f8',
   },
+  requestPhotoBlock: {
+    gap: 8,
+  },
+  requestPhotoThumbRow: {
+    marginTop: 2,
+  },
+  requestPhotoThumb: {
+    width: 70,
+    height: 70,
+    marginRight: 8,
+    borderRadius: 10,
+    backgroundColor: '#f8f8f8',
+  },
+  requestPhotoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  requestPhotoGridImage: {
+    width: '48.9%',
+    height: 112,
+    borderRadius: 10,
+    backgroundColor: '#f8f8f8',
+  },
+  requestPhotoGridImageHalf: {
+    height: 145,
+  },
+  requestPhotoGridImageLarge: {
+    width: '100%',
+    height: 145,
+  },
   reviewTitle: {
     color: '#292929',
     fontSize: 19.2,
@@ -3301,6 +3881,33 @@ const styles = StyleSheet.create({
     color: '#ff5e12',
     fontWeight: '600',
     fontFamily: FONT.semi,
+  },
+  voiceLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  voiceButton: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#a9ddba',
+    backgroundColor: '#e8f6ed',
+  },
+  voiceButtonActive: {
+    borderColor: '#ff5e12',
+    backgroundColor: '#fff0e8',
+  },
+  voiceButtonText: {
+    color: '#0d803d',
+    fontSize: 13,
+    fontFamily: FONT.semi,
+  },
+  voiceButtonTextActive: {
+    color: '#ff5e12',
   },
   approveButton: {
     flex: 1,
@@ -3353,6 +3960,28 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#f8f8f8',
   },
+  requestPhotoPreview: {
+    position: 'relative',
+    width: 76,
+    height: 76,
+  },
+  requestPhotoCountBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    minWidth: 24,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.68)',
+  },
+  requestPhotoCountText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontFamily: FONT.bold,
+  },
   requestBody: {
     flex: 1,
     gap: 4,
@@ -3399,20 +4028,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
   detailSheet: {
-    maxHeight: '88%',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    maxHeight: '82%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     backgroundColor: '#ffffff',
   },
   detailContent: {
-    gap: 12,
-    padding: 14,
-    paddingBottom: 28,
+    gap: 9,
+    padding: 12,
+    paddingBottom: 18,
   },
   detailPhoto: {
     width: '100%',
-    height: 240,
-    borderRadius: 14,
+    height: 165,
+    borderRadius: 12,
     backgroundColor: '#f8f8f8',
   },
   detailTitleRow: {
@@ -3433,40 +4062,40 @@ const styles = StyleSheet.create({
   },
   detailTitle: {
     color: '#292929',
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '600',
     fontFamily: FONT.semi,
   },
   detailGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   detailItem: {
     width: '48.7%',
-    gap: 5,
-    padding: 10,
-    borderRadius: 10,
+    gap: 3,
+    padding: 8,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: '#dee2e6',
     backgroundColor: '#f8f8f8',
   },
   detailItemLabel: {
     color: 'rgba(0, 0, 0, 0.5)',
-    fontSize: 14.4,
+    fontSize: 12.5,
     fontWeight: '600',
     fontFamily: FONT.semi,
   },
   detailItemValue: {
     color: '#292929',
-    fontSize: 17.6,
+    fontSize: 15,
     fontWeight: '600',
     fontFamily: FONT.semi,
   },
   detailNote: {
-    gap: 6,
-    padding: 12,
-    borderRadius: 14,
+    gap: 5,
+    padding: 10,
+    borderRadius: 12,
     backgroundColor: '#e8f6ed',
   },
   detailNoteLabel: {
@@ -3477,9 +4106,9 @@ const styles = StyleSheet.create({
   },
   detailNoteText: {
     color: '#292929',
-    fontSize: 17.6,
+    fontSize: 15,
     fontFamily: FONT.regular,
-    lineHeight: 24,
+    lineHeight: 21,
   },
   detailRejectNote: {
     gap: 6,
@@ -3502,7 +4131,7 @@ const styles = StyleSheet.create({
   detailCloseButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: 46,
     borderRadius: 10,
     backgroundColor: '#0d803d',
   },
@@ -3564,6 +4193,37 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 15,
   },
+  outletSearchBox: {
+    gap: 6,
+  },
+  outletSearchHint: {
+    color: '#718096',
+    fontSize: 12,
+    fontFamily: FONT.regular,
+  },
+  outletDropdown: {
+    maxHeight: 280,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+    overflow: 'hidden',
+  },
+  outletDropdownScroll: {
+    maxHeight: 280,
+  },
+  outletDropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    gap: 4,
+  },
+  outletDropdownAddress: {
+    color: '#718096',
+    fontSize: 12,
+    fontFamily: FONT.regular,
+  },
   quantityRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3618,11 +4278,30 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 16,
   },
+  statsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   statsTitleHeader: {
+    flex: 1,
     fontSize: 18,
     fontFamily: FONT.bold,
     color: '#1a1a2e',
     marginBottom: 4,
+  },
+  statsExportButton: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#0d803d',
+  },
+  statsExportText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontFamily: FONT.bold,
   },
   kpiGrid: {
     flexDirection: 'row',
@@ -3861,17 +4540,13 @@ const styles = StyleSheet.create({
   },
   demoHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     marginBottom: 8,
   },
   demoTitle: {
     fontSize: 15,
     fontFamily: FONT.bold,
-    color: '#006c35',
-  },
-  demoInfoIcon: {
-    fontSize: 16,
     color: '#006c35',
   },
   demoBodyText: {
@@ -3881,16 +4556,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   loginFooter: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 48,
     marginBottom: 20,
-    gap: 8,
-  },
-  loginFooterIcon: {
-    fontSize: 18,
-    color: '#718096',
   },
   loginFooterText: {
     fontSize: 12,
@@ -4132,39 +4801,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   aiCameraIcon: {
-    width: 44,
-    height: 34,
-    justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
-    marginBottom: 6,
+    justifyContent: 'center',
   },
   aiCameraBody: {
-    width: 40,
-    height: 28,
-    borderRadius: 6,
+    width: 48,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
     borderWidth: 3,
     borderColor: '#a0aec0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    marginTop: 4,
   },
   aiCameraLens: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2.5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 3,
     borderColor: '#a0aec0',
-  },
-  aiCameraTop: {
-    width: 10,
-    height: 3,
-    backgroundColor: '#a0aec0',
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
-    position: 'absolute',
-    top: 0,
   },
   aiPhotoPlaceholderText: {
     fontSize: 14,
@@ -4188,6 +4842,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontFamily: FONT.bold,
     lineHeight: 22,
+  },
+  photoRemoveButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.64)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoRemoveText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    lineHeight: 18,
   },
   progressWidget: {
     backgroundColor: '#ffffff',
