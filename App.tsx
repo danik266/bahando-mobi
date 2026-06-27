@@ -1492,22 +1492,24 @@ function SenderForm({
       </View>
 
       {/* Extra photos strip */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
-        {(form.extraPhotoUrls ?? []).map((uri, idx) => (
-          <View key={idx} style={styles.extraPhotoThumb}>
-            <Image source={{ uri }} style={styles.extraPhotoThumbImg} />
-            <Pressable
-              style={styles.extraPhotoRemoveBtn}
-              onPress={() => onSetField('extraPhotoUrls', (form.extraPhotoUrls ?? []).filter((_, i) => i !== idx))}
-            >
-              <Text style={styles.extraPhotoRemoveText}>x</Text>
-            </Pressable>
-          </View>
-        ))}
-        <Pressable onPress={onAddExtraPhoto} style={styles.extraPhotoAddBtn}>
-          <Text style={styles.extraPhotoAddText}>+{'\n'}фото</Text>
-        </Pressable>
-      </ScrollView>
+      {form.photoUrl ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
+          {(form.extraPhotoUrls ?? []).map((uri, idx) => (
+            <View key={idx} style={styles.extraPhotoThumb}>
+              <Image source={{ uri }} style={styles.extraPhotoThumbImg} />
+              <Pressable
+                style={styles.extraPhotoRemoveBtn}
+                onPress={() => onSetField('extraPhotoUrls', (form.extraPhotoUrls ?? []).filter((_, i) => i !== idx))}
+              >
+                <Text style={styles.extraPhotoRemoveText}>x</Text>
+              </Pressable>
+            </View>
+          ))}
+          <Pressable onPress={onAddExtraPhoto} style={styles.extraPhotoAddBtn}>
+            <Text style={styles.extraPhotoAddText}>+{'\n'}фото</Text>
+          </Pressable>
+        </ScrollView>
+      ) : null}
 
       {renderDetailsFields()}
     </View>
