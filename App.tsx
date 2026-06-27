@@ -90,6 +90,7 @@ type WriteOffRequest = {
   photoUrl: string
   photoName: string
   photoHash: string
+  extraPhotoUrls?: string[]
   status: Status
   createdById: string
   reviewedById?: string
@@ -499,6 +500,7 @@ export default function App() {
           photoUrl: form.photoUrl,
           photoName: form.photoName,
           photoHash: form.photoHash,
+          extraPhotoUrls: form.extraPhotoUrls,
           createdById: currentUser.id,
         }),
       })
@@ -1042,6 +1044,234 @@ function SenderForm({
   // Outlet options filtered by employee's city
   const cityOutlets = data.outlets.filter((o) => o.city === currentUser?.city)
 
+  const renderDetailsFields = () => {
+    return (
+      <View style={{ gap: 16 }}>
+        {/* Product search input */}
+        <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
+        <ProductSearch
+          products={data.products}
+          value={form.productId}
+          onChange={(val) => onSetField('productId', val)}
+        />
+
+        {/* Quantity entry */}
+        <Text style={styles.wizardFieldLabel}>Количество</Text>
+        <View style={styles.detailsQuantityRow}>
+          <TextInput
+            keyboardType="decimal-pad"
+            value={form.quantity}
+            onChangeText={(value) => {
+              // Разрешаем только цифры и одну точку
+              const cleaned = value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+              const parts = cleaned.split('.');
+              const finalVal = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned;
+              onSetField('quantity', finalVal);
+            }}
+            placeholder="0"
+            style={styles.detailsQuantityInput}
+          />
+          <View style={styles.detailsUnitBadge}>
+            <Text style={styles.detailsUnitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
+          </View>
+        </View>
+
+        {/* Reason selector chips */}
+        <Text style={styles.wizardFieldLabel}>Причина списания</Text>
+        <View style={styles.reasonsChipsContainer}>
+          {data.reasons.map((item) => {
+            const isSelected = form.reasonId === item.id
+            return (
+              <Pressable
+                key={item.id}
+                style={[
+                  styles.reasonChipItem,
+                  isSelected && styles.reasonChipItemActive,
+                ]}
+                onPress={() => onSetField('reasonId', item.id)}
+              >
+                <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
+                  {item.name}
+                </Text>
+                {isSelected && (
+                  <View style={styles.reasonChipCheckDot} />
+                )}
+              </Pressable>
+            )
+          })}
+        </View>
+
+        {/* Cost grid side-by-side cards */}
+        <View style={styles.costCardsRow}>
+          <View style={styles.costCard}>
+            <Text style={styles.costCardLabel}>Себестоимость</Text>
+            <Text style={styles.costCardValue}>{formatMoney(cost)}</Text>
+          </View>
+          <View style={styles.costCard}>
+            <Text style={styles.costCardLabel}>Итого к списанию</Text>
+            <Text style={[styles.costCardValue, { color: '#097a3a' }]}>
+              {formatMoney(totalCostAmount)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Dates fields if required */}
+        {needsExpiry && (
+          <View style={styles.expiryGrid}>
+            <View style={styles.expiryInputGroup}>
+              <Text style={styles.wizardFieldLabel}>Дата производства</Text>
+              <TextInput
+                value={form.productionDate}
+                onChangeText={(value) => onSetField('productionDate', value)}
+                placeholder="2026-06-25"
+                style={styles.wizardTextInput}
+              />
+            </View>
+            <View style={styles.expiryInputGroup}>
+              <Text style={styles.wizardFieldLabel}>Годен до</Text>
+              <TextInput
+                value={form.expiryDate}
+                onChangeText={(value) => onSetField('expiryDate', value)}
+                placeholder="2026-06-27"
+                style={styles.wizardTextInput}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Damage fields if required */}
+        {needsDamage && (
+          <View style={styles.damageBox}>
+            <Text style={styles.wizardFieldLabel}>Вид повреждения</Text>
+            <ChipGrid
+              items={[
+                { id: 'Помято' },
+                { id: 'Упало' },
+                { id: 'Порвана упаковка' },
+                { id: 'Прочее' },
+              ]}
+              value={form.damageType}
+              getLabel={(item) => item.id}
+              onChange={(value) => onSetField('damageType', value)}
+            />
+
+            <Text style={styles.wizardFieldLabel}>Когда обнаружено</Text>
+            <ChipGrid
+              items={[
+                { id: 'При приемке' },
+                { id: 'При хранении' },
+                { id: 'В процессе готовки' },
+                { id: 'Прочее' },
+              ]}
+              value={form.damageDiscoveredAt}
+              getLabel={(item) => item.id}
+              onChange={(value) => onSetField('damageDiscoveredAt', value)}
+            />
+          </View>
+        )}
+
+        {/* Deduction Toggle segmented container */}
+        <View style={styles.deductionToggleSegmented}>
+          <Pressable
+            style={[
+              styles.deductionToggleBtn,
+              form.type === 'without_deduction' && styles.deductionToggleBtnActive,
+            ]}
+            onPress={() => onSetField('type', 'without_deduction')}
+          >
+            <Text
+              style={[
+                styles.deductionToggleText,
+                form.type === 'without_deduction' && styles.deductionToggleTextActive,
+              ]}
+            >
+              Без удержания
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.deductionToggleBtn,
+              form.type === 'with_deduction' && styles.deductionToggleBtnActive,
+            ]}
+            onPress={() => onSetField('type', 'with_deduction')}
+          >
+            <Text
+              style={[
+                styles.deductionToggleText,
+                form.type === 'with_deduction' && styles.deductionToggleTextActive,
+              ]}
+            >
+              С удержанием
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Deduction items */}
+        {form.type === 'with_deduction' && (
+          <View style={styles.deductionFieldsContainer}>
+            <Text style={styles.wizardFieldLabel}>Сотрудник для удержания</Text>
+            <View style={styles.deductionEmployeeSelector}>
+              {form.deductionEmployeeId ? (
+                <View style={styles.deductionEmployeeChip}>
+                  <Text style={styles.deductionEmployeeChipIcon}>u</Text>
+                  <Text style={styles.deductionEmployeeChipText}>
+                    {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
+                  </Text>
+                  <Pressable
+                    onPress={() => onSetField('deductionEmployeeId', '')}
+                    style={styles.deductionEmployeeChipClear}
+                  >
+                    <Text style={styles.deductionEmployeeChipClearText}>x</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <ChipGrid
+                  items={data.employees.filter((employee) => employee.role === 'sender')}
+                  value={form.deductionEmployeeId}
+                  getLabel={(item) => item.name}
+                  onChange={(value) => onSetField('deductionEmployeeId', value)}
+                />
+              )}
+            </View>
+
+            <Text style={styles.wizardFieldLabel}>Причина удержания</Text>
+            <TextInput
+              value={form.deductionReason}
+              onChangeText={(value) => onSetField('deductionReason', value)}
+              placeholder="Например: халатность"
+              placeholderTextColor="#999"
+              style={styles.wizardTextInput}
+            />
+          </View>
+        )}
+
+        {/* General Comment */}
+        <Text style={styles.wizardFieldLabel}>Комментарий</Text>
+        <TextInput
+          value={form.comment}
+          onChangeText={(value) => onSetField('comment', value)}
+          placeholder="Например: булочки повреждены при приемке"
+          placeholderTextColor="#999"
+          multiline
+          style={styles.detailsCommentInput}
+        />
+
+        {/* Submit Button */}
+        <Pressable
+          disabled={!canSubmit}
+          style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
+          onPress={onSubmit}
+        >
+          {isSaving ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
+          )}
+        </Pressable>
+      </View>
+    )
+  }
+
   if (formStep === 'wizard') {
     return (
       <View style={styles.wizardContainer}>
@@ -1116,7 +1346,7 @@ function SenderForm({
     )
   }
 
-  // AI Mode: photo + hint before going to details
+  // AI Mode: photo + hint
   if (formStep === 'choose_mode') {
     return (
       <View style={styles.wizardContainer}>
@@ -1129,24 +1359,50 @@ function SenderForm({
 
         {/* Photo upload block */}
         <View style={styles.aiPhotoBlock}>
-          <Pressable onPress={onChoosePhoto} style={styles.aiPhotoPressable}>
-            {form.photoUrl ? (
-              <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
-            ) : (
-              <View style={styles.aiPhotoPlaceholder}>
-                <View style={styles.aiCameraIcon}>
-                  <View style={styles.aiCameraBody} />
-                  <View style={styles.aiCameraLens} />
+          <View style={{ position: 'relative' }}>
+            <Pressable onPress={onChoosePhoto} style={styles.aiPhotoPressable}>
+              {form.photoUrl ? (
+                <Image source={{ uri: form.photoUrl }} style={styles.aiPhotoPreview} />
+              ) : (
+                <View style={styles.aiPhotoPlaceholder}>
+                  <View style={styles.aiCameraIcon}>
+                    <View style={styles.aiCameraBody} />
+                    <View style={styles.aiCameraLens} />
+                  </View>
+                  <Text style={styles.aiPhotoPlaceholderText}>Нажмите чтобы добавить фото</Text>
                 </View>
-                <Text style={styles.aiPhotoPlaceholderText}>Нажмите чтобы добавить фото</Text>
-              </View>
-            )}
-            {!form.photoUrl && (
-              <View style={styles.aiPhotoPlusBadge}>
-                <Text style={styles.aiPhotoPlusText}>+</Text>
-              </View>
-            )}
-          </Pressable>
+              )}
+              {!form.photoUrl && (
+                <View style={styles.aiPhotoPlusBadge}>
+                  <Text style={styles.aiPhotoPlusText}>+</Text>
+                </View>
+              )}
+            </Pressable>
+            {form.photoUrl ? (
+              <Pressable
+                onPress={() => {
+                  onSetField('photoUrl', '')
+                  onSetField('photoName', '')
+                  onSetField('photoHash', '')
+                  onHintChange('')
+                }}
+                style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10,
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 16, fontFamily: FONT.bold, marginTop: -2 }}>x</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         {/* Hint input */}
@@ -1161,31 +1417,32 @@ function SenderForm({
 
         {aiResult && <AiResultCard result={aiResult} />}
 
-        <Pressable
-          disabled={!form.photoUrl || isAnalyzing}
-          style={[styles.wizardProceedBtn, (!form.photoUrl || isAnalyzing) && styles.disabledButton]}
-          onPress={onAnalyze}
-        >
-          {isAnalyzing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.wizardProceedText}>Анализировать фото</Text>
-          )}
-        </Pressable>
-
-        {aiResult && (
+        {/* Analyze button: disabled if analyzed or no photo */}
+        {!aiResult && (
           <Pressable
-            style={[styles.detailsSubmitBtn, { marginTop: 10 }]}
-            onPress={() => onFormStepChange('details')}
+            disabled={!form.photoUrl || isAnalyzing}
+            style={[styles.wizardProceedBtn, (!form.photoUrl || isAnalyzing) && styles.disabledButton]}
+            onPress={onAnalyze}
           >
-            <Text style={styles.detailsSubmitText}>Далее — заполнить детали</Text>
+            {isAnalyzing ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.wizardProceedText}>Анализировать фото</Text>
+            )}
           </Pressable>
+        )}
+
+        {/* Render Form fields inline directly below AI result card if analyzed */}
+        {aiResult && (
+          <View style={{ marginTop: 8 }}>
+            {renderDetailsFields()}
+          </View>
         )}
       </View>
     )
   }
 
-  // Details form step (Step 2)
+  // Details form step (Manual Mode Step 2)
   return (
     <View style={styles.detailsContainer}>
       {/* Back button only */}
@@ -1195,19 +1452,44 @@ function SenderForm({
 
       {/* Photo upload — mandatory for both modes */}
       <Text style={styles.wizardFieldLabel}>Фото товара <Text style={{ color: '#e53e3e' }}>*</Text></Text>
-      <Pressable onPress={onChoosePhoto} style={styles.detailsPhotoBlock}>
-        {form.photoUrl ? (
-          <Image source={{ uri: form.photoUrl }} style={styles.detailsPhotoImage} />
-        ) : (
-          <View style={styles.detailsPhotoEmpty}>
-            <View style={styles.detailsPhotoCameraBox}>
-              <View style={styles.aiCameraBody} />
-              <View style={styles.aiCameraLens} />
+      <View style={{ position: 'relative' }}>
+        <Pressable onPress={onChoosePhoto} style={styles.detailsPhotoBlock}>
+          {form.photoUrl ? (
+            <Image source={{ uri: form.photoUrl }} style={styles.detailsPhotoImage} />
+          ) : (
+            <View style={styles.detailsPhotoEmpty}>
+              <View style={styles.detailsPhotoCameraBox}>
+                <View style={styles.aiCameraBody} />
+                <View style={styles.aiCameraLens} />
+              </View>
+              <Text style={styles.detailsPhotoEmptyText}>Нажмите, чтобы добавить фото</Text>
             </View>
-            <Text style={styles.detailsPhotoEmptyText}>Нажмите, чтобы добавить фото</Text>
-          </View>
-        )}
-      </Pressable>
+          )}
+        </Pressable>
+        {form.photoUrl ? (
+          <Pressable
+            onPress={() => {
+              onSetField('photoUrl', '')
+              onSetField('photoName', '')
+              onSetField('photoHash', '')
+            }}
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontFamily: FONT.bold, marginTop: -2 }}>x</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {/* Extra photos strip */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
@@ -1227,222 +1509,7 @@ function SenderForm({
         </Pressable>
       </ScrollView>
 
-
-      {/* Product search input */}
-      <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
-      <ProductSearch
-        products={data.products}
-        value={form.productId}
-        onChange={(val) => onSetField('productId', val)}
-      />
-
-      {/* Quantity entry */}
-      <Text style={styles.wizardFieldLabel}>Количество</Text>
-      <View style={styles.detailsQuantityRow}>
-        <TextInput
-          keyboardType="decimal-pad"
-          value={form.quantity}
-          onChangeText={(value) => onSetField('quantity', value)}
-          placeholder="0"
-          style={styles.detailsQuantityInput}
-        />
-        <View style={styles.detailsUnitBadge}>
-          <Text style={styles.detailsUnitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
-        </View>
-      </View>
-
-      {/* Reason selector chips */}
-      <Text style={styles.wizardFieldLabel}>Причина списания</Text>
-      <View style={styles.reasonsChipsContainer}>
-        {data.reasons.map((item) => {
-          const isSelected = form.reasonId === item.id
-          return (
-            <Pressable
-              key={item.id}
-              style={[
-                styles.reasonChipItem,
-                isSelected && styles.reasonChipItemActive,
-              ]}
-              onPress={() => onSetField('reasonId', item.id)}
-            >
-              <Text style={[styles.reasonChipText, isSelected && styles.reasonChipTextActive]}>
-                {item.name}
-              </Text>
-              {isSelected && (
-                <View style={styles.reasonChipCheckDot} />
-              )}
-            </Pressable>
-          )
-        })}
-      </View>
-
-      {/* Cost grid side-by-side cards */}
-      <View style={styles.costCardsRow}>
-        <View style={styles.costCard}>
-          <Text style={styles.costCardLabel}>Себестоимость</Text>
-          <Text style={styles.costCardValue}>{formatMoney(cost)}</Text>
-        </View>
-        <View style={styles.costCard}>
-          <Text style={styles.costCardLabel}>Итого к списанию</Text>
-          <Text style={[styles.costCardValue, { color: '#097a3a' }]}>
-            {formatMoney(totalCostAmount)}
-          </Text>
-        </View>
-      </View>
-
-      {/* Dates fields if required */}
-      {needsExpiry && (
-        <View style={styles.expiryGrid}>
-          <View style={styles.expiryInputGroup}>
-            <Text style={styles.wizardFieldLabel}>Дата производства</Text>
-            <TextInput
-              value={form.productionDate}
-              onChangeText={(value) => onSetField('productionDate', value)}
-              placeholder="2026-06-25"
-              style={styles.wizardTextInput}
-            />
-          </View>
-          <View style={styles.expiryInputGroup}>
-            <Text style={styles.wizardFieldLabel}>Годен до</Text>
-            <TextInput
-              value={form.expiryDate}
-              onChangeText={(value) => onSetField('expiryDate', value)}
-              placeholder="2026-06-27"
-              style={styles.wizardTextInput}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Damage fields if required */}
-      {needsDamage && (
-        <View style={styles.damageBox}>
-          <Text style={styles.wizardFieldLabel}>Вид повреждения</Text>
-          <ChipGrid
-            items={[
-              { id: 'Помято' },
-              { id: 'Упало' },
-              { id: 'Порвана упаковка' },
-              { id: 'Прочее' },
-            ]}
-            value={form.damageType}
-            getLabel={(item) => item.id}
-            onChange={(value) => onSetField('damageType', value)}
-          />
-
-          <Text style={styles.wizardFieldLabel}>Когда обнаружено</Text>
-          <ChipGrid
-            items={[
-              { id: 'При приемке' },
-              { id: 'При хранении' },
-              { id: 'В процессе готовки' },
-              { id: 'Прочее' },
-            ]}
-            value={form.damageDiscoveredAt}
-            getLabel={(item) => item.id}
-            onChange={(value) => onSetField('damageDiscoveredAt', value)}
-          />
-        </View>
-      )}
-
-      {/* Deduction Toggle segmented container */}
-      <View style={styles.deductionToggleSegmented}>
-        <Pressable
-          style={[
-            styles.deductionToggleBtn,
-            form.type === 'without_deduction' && styles.deductionToggleBtnActive,
-          ]}
-          onPress={() => onSetField('type', 'without_deduction')}
-        >
-          <Text
-            style={[
-              styles.deductionToggleText,
-              form.type === 'without_deduction' && styles.deductionToggleTextActive,
-            ]}
-          >
-            Без удержания
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[
-            styles.deductionToggleBtn,
-            form.type === 'with_deduction' && styles.deductionToggleBtnActive,
-          ]}
-          onPress={() => onSetField('type', 'with_deduction')}
-        >
-          <Text
-            style={[
-              styles.deductionToggleText,
-              form.type === 'with_deduction' && styles.deductionToggleTextActive,
-            ]}
-          >
-            С удержанием
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Deduction items */}
-      {form.type === 'with_deduction' && (
-        <View style={styles.deductionFieldsContainer}>
-          <Text style={styles.wizardFieldLabel}>Сотрудник для удержания</Text>
-          <View style={styles.deductionEmployeeSelector}>
-            {form.deductionEmployeeId ? (
-              <View style={styles.deductionEmployeeChip}>
-                <Text style={styles.deductionEmployeeChipIcon}>u</Text>
-                <Text style={styles.deductionEmployeeChipText}>
-                  {data.employees.find((e) => e.id === form.deductionEmployeeId)?.name || 'Выбран'}
-                </Text>
-                <Pressable
-                  onPress={() => onSetField('deductionEmployeeId', '')}
-                  style={styles.deductionEmployeeChipClear}
-                >
-                  <Text style={styles.deductionEmployeeChipClearText}>x</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <ChipGrid
-                items={data.employees.filter((employee) => employee.role === 'sender')}
-                value={form.deductionEmployeeId}
-                getLabel={(item) => item.name}
-                onChange={(value) => onSetField('deductionEmployeeId', value)}
-              />
-            )}
-          </View>
-
-          <Text style={styles.wizardFieldLabel}>Причина удержания</Text>
-          <TextInput
-            value={form.deductionReason}
-            onChangeText={(value) => onSetField('deductionReason', value)}
-            placeholder="Например: халатность"
-            placeholderTextColor="#999"
-            style={styles.wizardTextInput}
-          />
-        </View>
-      )}
-
-      {/* General Comment */}
-      <Text style={styles.wizardFieldLabel}>Комментарий</Text>
-      <TextInput
-        value={form.comment}
-        onChangeText={(value) => onSetField('comment', value)}
-        placeholder="Например: булочки повреждены при приемке"
-        placeholderTextColor="#999"
-        multiline
-        style={styles.detailsCommentInput}
-      />
-
-      {/* Submit Button */}
-      <Pressable
-        disabled={!canSubmit}
-        style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
-        onPress={onSubmit}
-      >
-        {isSaving ? (
-          <ActivityIndicator color="#ffffff" />
-        ) : (
-          <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
-        )}
-      </Pressable>
+      {renderDetailsFields()}
     </View>
   )
 }
@@ -2282,6 +2349,14 @@ function RequestDetailModal({
   employees: Employee[]
   onClose: () => void
 }) {
+  const [activePhoto, setActivePhoto] = useState(request?.photoUrl ?? '')
+
+  useEffect(() => {
+    if (request) {
+      setActivePhoto(request.photoUrl)
+    }
+  }, [request])
+
   const product = request
     ? products.find((item) => item.id === request.productId)
     : undefined
@@ -2310,7 +2385,33 @@ function RequestDetailModal({
         <View style={styles.detailSheet}>
           {request ? (
             <ScrollView contentContainerStyle={styles.detailContent}>
-              <Image source={{ uri: request.photoUrl }} style={styles.detailPhoto} />
+              <Image source={{ uri: activePhoto || request.photoUrl }} style={styles.detailPhoto} />
+              
+              {request.extraPhotoUrls && request.extraPhotoUrls.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 8, marginBottom: 8, paddingHorizontal: 4 }}>
+                  <Pressable onPress={() => setActivePhoto(request.photoUrl)}>
+                    <Image
+                      source={{ uri: request.photoUrl }}
+                      style={[
+                        { width: 68, height: 68, borderRadius: 10, marginRight: 8, borderWidth: 2, borderColor: '#e2e8f0' },
+                        (activePhoto === request.photoUrl || !activePhoto) && { borderColor: '#0d803d' }
+                      ]}
+                    />
+                  </Pressable>
+                  {request.extraPhotoUrls.map((uri, idx) => (
+                    <Pressable key={idx} onPress={() => setActivePhoto(uri)}>
+                      <Image
+                        source={{ uri }}
+                        style={[
+                          { width: 68, height: 68, borderRadius: 10, marginRight: 8, borderWidth: 2, borderColor: '#e2e8f0' },
+                          activePhoto === uri && { borderColor: '#0d803d' }
+                        ]}
+                      />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+
               <View style={styles.detailTitleRow}>
                 <View style={styles.detailTitleText}>
                   <Text style={styles.detailKicker}>Заявка #{request.id}</Text>
