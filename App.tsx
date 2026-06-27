@@ -28,12 +28,13 @@ import {
 type Role = 'sender' | 'reviewer'
 type Status = 'pending' | 'approved' | 'rejected' | 'iiko_error'
 type WriteOffType = 'without_deduction' | 'with_deduction'
-type ViewMode = 'create' | 'mine' | 'review' | 'history'
+type ViewMode = 'create' | 'mine' | 'review' | 'history' | 'stats'
 
 type Outlet = {
   id: string
   name: string
   address: string
+  city: string
   iikoStoreId: string
 }
 
@@ -51,6 +52,7 @@ type Employee = {
   name: string
   role: Role
   login: string
+  city: string
   outletId: string
   outletIds: string[]
   accessScope: 'assigned' | 'all'
@@ -122,7 +124,6 @@ type FormState = {
   damageDiscoveredAt: string
   productionDate: string
   expiryDate: string
-  managerComment: string
 }
 
 const API_URL = normalizeBaseUrl(
@@ -188,6 +189,13 @@ export default function App() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
+  const [isAddEmployeeVisible, setIsAddEmployeeVisible] = useState(false)
+  const [newEmpName, setNewEmpName] = useState('')
+  const [newEmpCity, setNewEmpCity] = useState('Астана')
+  const [newEmpLogin, setNewEmpLogin] = useState('')
+  const [newEmpPin, setNewEmpPin] = useState('')
+  const [addEmpError, setAddEmpError] = useState('')
+
   const selectedProduct = data.products.find((product) => product.id === form.productId)
   const selectedReason = data.reasons.find((reason) => reason.id === form.reasonId)
 
@@ -238,7 +246,7 @@ export default function App() {
       setAuthError('')
       const result = await requestJson<{ user: Employee; token: string }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ login: loginName, password }),
+        body: JSON.stringify({ login: loginName, pinCode: password }),
       })
       const query = `?userId=${encodeURIComponent(result.user.id)}`
       const payload = await requestJson<BootstrapPayload>(`/bootstrap${query}`)
@@ -459,6 +467,34 @@ export default function App() {
     }
   }
 
+  async function handleAddEmployee() {
+    if (!currentUser) return
+    try {
+      setIsSaving(true)
+      setAddEmpError('')
+      await requestJson('/employees', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newEmpName,
+          login: newEmpLogin,
+          pinCode: newEmpPin,
+          city: newEmpCity,
+          createdById: currentUser.id,
+        }),
+      })
+      Alert.alert('Успех', `Сотрудник ${newEmpName} успешно добавлен!`)
+      setIsAddEmployeeVisible(false)
+      setNewEmpName('')
+      setNewEmpLogin('')
+      setNewEmpPin('')
+      await loadData()
+    } catch (err) {
+      setAddEmpError(err instanceof Error ? err.message : 'Не удалось добавить сотрудника')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   async function approveRequest(requestId: string) {
     if (!currentUser) return
     try {
@@ -630,6 +666,7 @@ export default function App() {
 
                   {viewMode === 'create' ? (
                     <SenderForm
+                      currentUser={currentUser}
                       data={data}
                       form={form}
                       formMode={formMode}
@@ -656,6 +693,15 @@ export default function App() {
                 </>
               ) : (
                 <>
+                  {currentUser.accessScope === 'all' && (
+                    <Pressable
+                      style={styles.addEmployeeTopButton}
+                      onPress={() => setIsAddEmployeeVisible(true)}
+                    >
+                      <Text style={styles.addEmployeeTopButtonText}>+ Добавить сотрудника</Text>
+                    </Pressable>
+                  )}
+
                   <View style={styles.tabs}>
                     <TabButton
                       active={viewMode === 'review'}
@@ -666,6 +712,11 @@ export default function App() {
                       active={viewMode === 'history'}
                       label="История"
                       onPress={() => setViewMode('history')}
+                    />
+                    <TabButton
+                      active={viewMode === 'stats'}
+                      label="Статистика"
+                      onPress={() => setViewMode('stats')}
                     />
                   </View>
 
@@ -688,11 +739,19 @@ export default function App() {
                       onBulkApprove={bulkApproveRequests}
                       onClearSelection={clearSelection}
                     />
-                  ) : (
+                  ) : viewMode === 'history' ? (
                     <RequestList
                       requests={data.requests}
                       products={data.products}
                       onSelect={(request) => setDetailRequestId(request.id)}
+                    />
+                  ) : (
+                    <StatsView
+                      requests={data.requests}
+                      products={data.products}
+                      outlets={data.outlets}
+                      employees={data.employees}
+                      reasons={data.reasons}
                     />
                   )}
                 </>
@@ -708,6 +767,22 @@ export default function App() {
           reasons={data.reasons}
           employees={data.employees}
           onClose={() => setDetailRequestId('')}
+        />
+
+        <AddEmployeeModal
+          visible={isAddEmployeeVisible}
+          onClose={() => { setIsAddEmployeeVisible(false); setAddEmpError('') }}
+          name={newEmpName}
+          onNameChange={setNewEmpName}
+          city={newEmpCity}
+          onCityChange={setNewEmpCity}
+          login={newEmpLogin}
+          onLoginChange={setNewEmpLogin}
+          pin={newEmpPin}
+          onPinChange={setNewEmpPin}
+          onSave={handleAddEmployee}
+          isSaving={isSaving}
+          error={addEmpError}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -735,7 +810,7 @@ function LoginScreen({
     <View style={styles.loginPanel}>
       <Text style={styles.loginTitle}>Авторизация</Text>
       <Text style={styles.loginCopy}>
-        Войдите личным логином. Доступ к точкам откроется по роли пользователя.
+        Войдите личным логином и пин-кодом.
       </Text>
 
       <Text style={styles.label}>Логин</Text>
@@ -748,16 +823,17 @@ function LoginScreen({
         style={styles.input}
       />
 
-      <Text style={styles.label}>Пароль</Text>
+      <Text style={styles.label}>Пин-код</Text>
       <TextInput
         value={password}
         onChangeText={onPasswordChange}
-        placeholder="demo123"
+        placeholder="1234"
+        keyboardType="numeric"
         secureTextEntry
         style={styles.input}
       />
 
-      <Text style={styles.hashText}>aibek/demo123 · aigerim/review123 · manager/manager123</Text>
+      <Text style={styles.hashText}>aibek/1234 · aigerim/9999 · manager/0000 · madina/2222 · timur/3333</Text>
 
       {authError ? (
         <View style={styles.errorBoxInline}>
@@ -778,6 +854,7 @@ function LoginScreen({
 }
 
 function SenderForm({
+  currentUser,
   data,
   form,
   formMode,
@@ -794,6 +871,7 @@ function SenderForm({
   onChoosePhoto,
   onSubmit,
 }: {
+  currentUser: Employee | null
   data: BootstrapPayload
   form: FormState
   formMode: 'initial' | 'filling'
@@ -817,6 +895,13 @@ function SenderForm({
   const needsDamage = reasonName.includes('повреж') || reasonName.includes('порч')
   const canSubmit = progress >= 100 && !isSaving
 
+  const filteredOutlets = useMemo(() => {
+    if (currentUser?.city) {
+      return data.outlets.filter((o) => o.city === currentUser.city)
+    }
+    return data.outlets
+  }, [data.outlets, currentUser])
+
   return (
     <View style={styles.form}>
       <FormProgress percent={progress} />
@@ -824,7 +909,7 @@ function SenderForm({
       <View style={styles.panelHeader}>
         <Text style={styles.panelTitle}>Новая заявка на списание</Text>
         <Text style={styles.panelDetail}>
-          {data.outlets.length === 1 ? data.outlets[0]?.name : `${data.outlets.length} точек`}
+          {filteredOutlets.length === 1 ? filteredOutlets[0]?.name : `${filteredOutlets.length} точек`}
         </Text>
       </View>
 
@@ -880,33 +965,30 @@ function SenderForm({
 
       <Text style={styles.label}>Торговая точка</Text>
       <ChipGrid
-        items={data.outlets}
+        items={filteredOutlets}
         value={form.outletId}
         getLabel={(item) => item.name}
         onChange={(value) => onSetField('outletId', value)}
       />
 
       <Text style={styles.label}>Продукт</Text>
-      <ChipGrid
-        items={data.products}
+      <ProductSearch
+        products={data.products}
         value={form.productId}
-        getLabel={(item) => item.name}
         onChange={(value) => onSetField('productId', value)}
       />
 
-      <View style={styles.inputGrid}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Количество</Text>
-          <TextInput
-            keyboardType="decimal-pad"
-            value={form.quantity}
-            onChangeText={(value) => onSetField('quantity', value)}
-            style={styles.input}
-          />
-        </View>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Ед.</Text>
-          <TextInput value={selectedProduct?.unit ?? 'шт'} editable={false} style={styles.input} />
+      <Text style={styles.label}>Количество</Text>
+      <View style={styles.quantityRow}>
+        <TextInput
+          keyboardType="decimal-pad"
+          value={form.quantity}
+          onChangeText={(value) => onSetField('quantity', value)}
+          placeholder="0"
+          style={[styles.input, styles.quantityInput]}
+        />
+        <View style={styles.unitBadge}>
+          <Text style={styles.unitBadgeText}>{selectedProduct?.unit ?? 'шт'}</Text>
         </View>
       </View>
 
@@ -996,19 +1078,12 @@ function SenderForm({
             onChange={(value) => onSetField('deductionEmployeeId', value)}
           />
 
+
           <Text style={styles.label}>Причина удержания</Text>
           <TextInput
             value={form.deductionReason}
             onChangeText={(value) => onSetField('deductionReason', value)}
             placeholder="Например: халатность"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Комментарий руководителя</Text>
-          <TextInput
-            value={form.managerComment}
-            onChangeText={(value) => onSetField('managerComment', value)}
-            placeholder="Опционально"
             style={styles.input}
           />
         </>
@@ -1377,6 +1452,72 @@ function ChipGrid<T extends { id: string }>({
   )
 }
 
+function ProductSearch({
+  products,
+  value,
+  onChange,
+}: {
+  products: Product[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const selected = products.find((p) => p.id === value)
+
+  const filtered = query.trim()
+    ? products.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
+    : products
+
+  function selectProduct(id: string) {
+    onChange(id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <View>
+      <TextInput
+        value={open ? query : (selected?.name ?? '')}
+        onChangeText={(text) => {
+          setQuery(text)
+          setOpen(true)
+        }}
+        onFocus={() => {
+          setOpen(true)
+          setQuery('')
+        }}
+        placeholder="Начните вводить название..."
+        style={styles.input}
+        returnKeyType="search"
+      />
+      {open && (
+        <View style={styles.productDropdown}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.productDropdownScroll}>
+            {filtered.length === 0 ? (
+              <Text style={styles.productDropdownEmpty}>Ничего не найдено</Text>
+            ) : (
+              filtered.map((p) => (
+                <Pressable
+                  key={p.id}
+                  style={[styles.productDropdownItem, p.id === value && styles.productDropdownItemActive]}
+                  onPress={() => selectProduct(p.id)}
+                >
+                  <Text style={[styles.productDropdownText, p.id === value && styles.productDropdownTextActive]}>
+                    {p.name}
+                  </Text>
+                  <Text style={styles.productDropdownUnit}>{p.unit}</Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  )
+}
+
 function RequestCard({
   request,
   productName,
@@ -1407,6 +1548,365 @@ function RequestCard({
         </View>
       </View>
     </Pressable>
+  )
+}
+
+type StatsTab = 'outlets' | 'employees' | 'reasons'
+
+function StatsView({
+  requests,
+  products,
+  outlets,
+  employees,
+  reasons,
+}: {
+  requests: WriteOffRequest[]
+  products: Product[]
+  outlets: Outlet[]
+  employees: Employee[]
+  reasons: Reason[]
+}) {
+  const [activeTab, setActiveTab] = useState<StatsTab>('outlets')
+
+  // Helper to find product cost
+  const getProductCost = (productId: string) => {
+    return products.find((p) => p.id === productId)?.cost ?? 0
+  }
+
+  // Pre-calculate requests statistics
+  const approvedRequests = useMemo(() => requests.filter((r) => r.status === 'approved'), [requests])
+  
+  const totalSum = useMemo(() => {
+    return approvedRequests.reduce((sum, r) => sum + r.quantity * getProductCost(r.productId), 0)
+  }, [approvedRequests, products])
+
+  const totalCount = requests.length
+  const approvedCount = approvedRequests.length
+  const rejectedCount = useMemo(() => requests.filter((r) => r.status === 'rejected').length, [requests])
+  const pendingCount = useMemo(() => requests.filter((r) => r.status === 'pending').length, [requests])
+  
+  const avgRequestSum = approvedCount > 0 ? totalSum / approvedCount : 0
+
+  const deductionsSum = useMemo(() => {
+    return approvedRequests
+      .filter((r) => r.type === 'with_deduction')
+      .reduce((sum, r) => sum + r.quantity * getProductCost(r.productId), 0)
+  }, [approvedRequests, products])
+
+  // Aggregate by Outlets
+  const outletStats = useMemo(() => {
+    const map: Record<string, number> = {}
+    approvedRequests.forEach((r) => {
+      const val = r.quantity * getProductCost(r.productId)
+      map[r.outletId] = (map[r.outletId] || 0) + val
+    })
+    return outlets
+      .map((o) => ({
+        id: o.id,
+        name: o.name,
+        city: o.city,
+        amount: map[o.id] || 0,
+      }))
+      .filter((item) => item.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+  }, [approvedRequests, outlets, products])
+
+  // Aggregate by Senders (Employees)
+  const employeeStats = useMemo(() => {
+    const map: Record<string, number> = {}
+    approvedRequests.forEach((r) => {
+      const val = r.quantity * getProductCost(r.productId)
+      map[r.createdById] = (map[r.createdById] || 0) + val
+    })
+    return employees
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        role: e.role,
+        amount: map[e.id] || 0,
+      }))
+      .filter((item) => item.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+  }, [approvedRequests, employees, products])
+
+  // Aggregate by Reasons
+  const reasonStats = useMemo(() => {
+    const map: Record<string, number> = {}
+    approvedRequests.forEach((r) => {
+      const val = r.quantity * getProductCost(r.productId)
+      map[r.reasonId] = (map[r.reasonId] || 0) + val
+    })
+    return reasons
+      .map((res) => ({
+        id: res.id,
+        name: res.name,
+        amount: map[res.id] || 0,
+      }))
+      .filter((item) => item.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+  }, [approvedRequests, reasons, products])
+
+  // Max value for progress bar normalization
+  const maxAmount = useMemo(() => {
+    if (activeTab === 'outlets') return outletStats[0]?.amount ?? 1
+    if (activeTab === 'employees') return employeeStats[0]?.amount ?? 1
+    return reasonStats[0]?.amount ?? 1
+  }, [activeTab, outletStats, employeeStats, reasonStats])
+
+  return (
+    <View style={styles.statsContainer}>
+      <Text style={styles.statsTitleHeader}>Сводные данные (утверждено)</Text>
+
+      {/* Grid of KPI cards */}
+      <View style={styles.kpiGrid}>
+        <View style={[styles.kpiCard, { borderColor: '#22c55e' }]}>
+          <Text style={styles.kpiLabel}>Сумма списаний</Text>
+          <Text style={[styles.kpiValue, { color: '#15803d' }]}>{formatMoney(totalSum)}</Text>
+        </View>
+
+        <View style={[styles.kpiCard, { borderColor: '#ef4444' }]}>
+          <Text style={styles.kpiLabel}>Сумма удержаний</Text>
+          <Text style={[styles.kpiValue, { color: '#b91c1c' }]}>{formatMoney(deductionsSum)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.kpiGrid}>
+        <View style={styles.kpiCard}>
+          <Text style={styles.kpiLabel}>Среднее списание</Text>
+          <Text style={styles.kpiValue}>{formatMoney(avgRequestSum)}</Text>
+        </View>
+
+        <View style={styles.kpiCard}>
+          <Text style={styles.kpiLabel}>Всего заявок</Text>
+          <Text style={styles.kpiValue}>{totalCount} шт</Text>
+          <Text style={styles.kpiSubText}>
+            Утв: {approvedCount} · Откл: {rejectedCount} · Ожид: {pendingCount}
+          </Text>
+        </View>
+      </View>
+
+      {/* Sub-tabs switch */}
+      <View style={styles.statsSegmented}>
+        <Pressable
+          style={[styles.statsTabBtn, activeTab === 'outlets' && styles.statsTabBtnActive]}
+          onPress={() => setActiveTab('outlets')}
+        >
+          <Text style={[styles.statsTabText, activeTab === 'outlets' && styles.statsTabTextActive]}>
+            По точкам
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.statsTabBtn, activeTab === 'employees' && styles.statsTabBtnActive]}
+          onPress={() => setActiveTab('employees')}
+        >
+          <Text style={[styles.statsTabText, activeTab === 'employees' && styles.statsTabTextActive]}>
+            Сотрудники
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.statsTabBtn, activeTab === 'reasons' && styles.statsTabBtnActive]}
+          onPress={() => setActiveTab('reasons')}
+        >
+          <Text style={[styles.statsTabText, activeTab === 'reasons' && styles.statsTabTextActive]}>
+            Причины
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Charts / List */}
+      <View style={styles.chartPanel}>
+        {activeTab === 'outlets' && (
+          <>
+            {outletStats.length === 0 ? (
+              <Text style={styles.emptyStatsText}>Нет данных по точкам</Text>
+            ) : (
+              outletStats.map((item) => {
+                const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
+                return (
+                  <View key={item.id} style={styles.chartItem}>
+                    <View style={styles.chartItemHeader}>
+                      <Text style={styles.chartItemName}>{item.name}</Text>
+                      <Text style={styles.chartItemValue}>{formatMoney(item.amount)}</Text>
+                    </View>
+                    <Text style={styles.chartItemSubText}>{item.city}</Text>
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${pct}%`, backgroundColor: '#3b82f6' }]} />
+                    </View>
+                  </View>
+                )
+              })
+            )}
+          </>
+        )}
+
+        {activeTab === 'employees' && (
+          <>
+            {employeeStats.length === 0 ? (
+              <Text style={styles.emptyStatsText}>Нет данных по сотрудникам</Text>
+            ) : (
+              employeeStats.map((item) => {
+                const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
+                return (
+                  <View key={item.id} style={styles.chartItem}>
+                    <View style={styles.chartItemHeader}>
+                      <Text style={styles.chartItemName}>{item.name}</Text>
+                      <Text style={styles.chartItemValue}>{formatMoney(item.amount)}</Text>
+                    </View>
+                    <Text style={styles.chartItemSubText}>
+                      {item.role === 'sender' ? 'Сотрудник' : 'Проверяющий'}
+                    </Text>
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${pct}%`, backgroundColor: '#10b981' }]} />
+                    </View>
+                  </View>
+                )
+              })
+            )}
+          </>
+        )}
+
+        {activeTab === 'reasons' && (
+          <>
+            {reasonStats.length === 0 ? (
+              <Text style={styles.emptyStatsText}>Нет данных по причинам</Text>
+            ) : (
+              reasonStats.map((item) => {
+                const pct = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
+                return (
+                  <View key={item.id} style={styles.chartItem}>
+                    <View style={styles.chartItemHeader}>
+                      <Text style={styles.chartItemName}>{item.name}</Text>
+                      <Text style={styles.chartItemValue}>{formatMoney(item.amount)}</Text>
+                    </View>
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${pct}%`, backgroundColor: '#f59e0b' }]} />
+                    </View>
+                  </View>
+                )
+              })
+            )}
+          </>
+        )}
+      </View>
+    </View>
+  )
+}
+
+const CITIES = [
+  'Астана',
+  'Алматы',
+  'Усть-Каменогорск',
+  'Шымкент',
+  'Караганда',
+  'Актау',
+  'Атырау',
+  'Кокшетау',
+  'Костанай',
+  'Тараз',
+  'Актобе',
+]
+
+function AddEmployeeModal({
+  visible,
+  onClose,
+  name,
+  onNameChange,
+  city,
+  onCityChange,
+  login,
+  onLoginChange,
+  pin,
+  onPinChange,
+  onSave,
+  isSaving,
+  error,
+}: {
+  visible: boolean
+  onClose: () => void
+  name: string
+  onNameChange: (val: string) => void
+  city: string
+  onCityChange: (val: string) => void
+  login: string
+  onLoginChange: (val: string) => void
+  pin: string
+  onPinChange: (val: string) => void
+  onSave: () => void
+  isSaving: boolean
+  error: string
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.detailSheet}>
+          <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
+            <View style={styles.detailTitleRow}>
+              <Text style={styles.detailTitle}>Новый сотрудник</Text>
+              <Pressable onPress={onClose} style={styles.detailClose}>
+                <Text style={styles.detailCloseText}>✕</Text>
+              </Pressable>
+            </View>
+
+            <Text style={styles.label}>ФИО сотрудника</Text>
+            <TextInput
+              value={name}
+              onChangeText={onNameChange}
+              placeholder="Иван Иванов"
+              style={styles.input}
+            />
+
+            <Text style={styles.label}>Город</Text>
+            <ChipGrid
+              items={CITIES.map((c) => ({ id: c }))}
+              value={city}
+              getLabel={(item) => item.id}
+              onChange={(val) => onCityChange(val)}
+            />
+
+            <Text style={styles.label}>Логин</Text>
+            <TextInput
+              value={login}
+              onChangeText={onLoginChange}
+              placeholder="ivan"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+
+            <Text style={styles.label}>Пин-код (4–6 цифр)</Text>
+            <TextInput
+              value={pin}
+              onChangeText={onPinChange}
+              placeholder="1111"
+              keyboardType="numeric"
+              maxLength={6}
+              secureTextEntry
+              style={styles.input}
+            />
+
+            {error ? (
+              <View style={styles.errorBoxInline}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.addEmpActions}>
+              <Pressable style={styles.secondaryButton} onPress={onClose}>
+                <Text style={styles.secondaryText}>Отмена</Text>
+              </Pressable>
+              <Pressable
+                disabled={isSaving}
+                style={[styles.submitButton, isSaving && styles.disabledButton, styles.addEmpSaveBtn]}
+                onPress={onSave}
+              >
+                {isSaving ? <ActivityIndicator color="#ffffff" /> : null}
+                <Text style={styles.submitText}>Сохранить</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -1643,13 +2143,19 @@ function formatConfidence(value: number) {
 }
 
 function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState {
-  const preferredOutletId = sender?.outletIds?.[0] ?? sender?.outletId
-  const outlet = data.outlets.find((item) => item.id === preferredOutletId) ?? data.outlets[0]
+  const cityOutlets = sender?.city
+    ? data.outlets.filter((o) => o.city === sender.city)
+    : data.outlets
+  const preferredOutletId =
+    sender?.outletIds?.find((id) => cityOutlets.some((o) => o.id === id)) ??
+    sender?.outletId ??
+    cityOutlets[0]?.id
+  const outlet = data.outlets.find((item) => item.id === preferredOutletId) ?? cityOutlets[0]
   return {
     outletId: outlet?.id ?? '',
-    productId: data.products[0]?.id ?? '',
-    quantity: '1',
-    reasonId: data.reasons[0]?.id ?? '',
+    productId: '',
+    quantity: '',
+    reasonId: '',
     type: 'without_deduction',
     deductionEmployeeId: '',
     comment: '',
@@ -1661,7 +2167,6 @@ function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState
     productionDate: '',
     expiryDate: '',
     deductionReason: '',
-    managerComment: '',
   }
 }
 
@@ -1682,7 +2187,6 @@ function createEmptyForm(): FormState {
     productionDate: '',
     expiryDate: '',
     deductionReason: '',
-    managerComment: '',
   }
 }
 
@@ -2538,5 +3042,233 @@ const styles = StyleSheet.create({
     fontSize: 19.2,
     fontWeight: '600',
     fontFamily: FONT.semi,
+  },
+  productDropdown: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+    marginTop: 4,
+    overflow: 'hidden',
+    zIndex: 99,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  productDropdownScroll: {
+    maxHeight: 240,
+  },
+  productDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  productDropdownItemActive: {
+    backgroundColor: '#f0faf4',
+  },
+  productDropdownText: {
+    fontSize: 16,
+    fontFamily: FONT.regular,
+    color: '#292929',
+    flex: 1,
+  },
+  productDropdownTextActive: {
+    color: '#0d803d',
+    fontFamily: FONT.semi,
+  },
+  productDropdownUnit: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: '#999',
+    marginLeft: 8,
+  },
+  productDropdownEmpty: {
+    padding: 16,
+    textAlign: 'center',
+    color: '#999',
+    fontFamily: FONT.regular,
+    fontSize: 15,
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quantityInput: {
+    flex: 1,
+  },
+  unitBadge: {
+    height: 50,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#f4f4f4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 64,
+  },
+  unitBadgeText: {
+    fontSize: 16,
+    fontFamily: FONT.semi,
+    color: '#555',
+  },
+  addEmployeeTopButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 45,
+    borderRadius: 10,
+    backgroundColor: '#1a1a2e',
+    marginTop: 8,
+  },
+  addEmployeeTopButtonText: {
+    fontFamily: FONT.semi,
+    fontSize: 15,
+    color: '#ffffff',
+    letterSpacing: 0.3,
+  },
+  addEmpActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  addEmpSaveBtn: {
+    flex: 1,
+    marginTop: 0,
+  },
+  statsContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 16,
+  },
+  statsTitleHeader: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+    color: '#1a1a2e',
+    marginBottom: 4,
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  kpiCard: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  kpiLabel: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#666666',
+    marginBottom: 4,
+  },
+  kpiValue: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: '#1a1a2e',
+  },
+  kpiSubText: {
+    fontSize: 10,
+    fontFamily: FONT.regular,
+    color: '#999999',
+    marginTop: 4,
+  },
+  statsSegmented: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f3f5',
+    borderRadius: 10,
+    padding: 2,
+    marginTop: 8,
+  },
+  statsTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  statsTabBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statsTabText: {
+    fontSize: 13,
+    fontFamily: FONT.semi,
+    color: '#495057',
+  },
+  statsTabTextActive: {
+    color: '#1a1a2e',
+  },
+  chartPanel: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  chartItem: {
+    marginBottom: 16,
+  },
+  chartItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  chartItemName: {
+    fontSize: 14,
+    fontFamily: FONT.semi,
+    color: '#212529',
+    flex: 1,
+    marginRight: 8,
+  },
+  chartItemValue: {
+    fontSize: 14,
+    fontFamily: FONT.bold,
+    color: '#212529',
+  },
+  chartItemSubText: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: '#868e96',
+    marginBottom: 6,
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: '#e9ecef',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  emptyStatsText: {
+    textAlign: 'center',
+    color: '#868e96',
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    paddingVertical: 12,
   },
 })
