@@ -121,6 +121,7 @@ type FormState = {
   photoUrl: string
   photoName: string
   photoHash: string
+  extraPhotoUrls: string[]
   damageType: string
   damageDiscoveredAt: string
   productionDate: string
@@ -388,6 +389,54 @@ export default function App() {
     }))
     setAiResult(null)
     setFormMode('initial')
+  }
+
+  function addExtraPhoto() {
+    Alert.alert('Фото продукции', 'Откуда добавить фото?', [
+      {
+        text: 'Камера',
+        onPress: async () => {
+          const permission = await ImagePicker.requestCameraPermissionsAsync()
+          if (!permission.granted) return
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            base64: true,
+            quality: 0.68,
+          })
+          if (!result.canceled) {
+            const asset = result.assets[0]
+            const mimeType = asset.mimeType ?? 'image/jpeg'
+            const dataUrl = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : asset.uri
+            setForm((current) => ({
+              ...current,
+              extraPhotoUrls: [...(current.extraPhotoUrls ?? []), dataUrl],
+            }))
+          }
+        },
+      },
+      {
+        text: 'Галерея',
+        onPress: async () => {
+          const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+          if (!permission.granted) return
+          const result = await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: false,
+            base64: true,
+            quality: 0.68,
+          })
+          if (!result.canceled) {
+            const asset = result.assets[0]
+            const mimeType = asset.mimeType ?? 'image/jpeg'
+            const dataUrl = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : asset.uri
+            setForm((current) => ({
+              ...current,
+              extraPhotoUrls: [...(current.extraPhotoUrls ?? []), dataUrl],
+            }))
+          }
+        },
+      },
+      { text: 'Отмена', style: 'cancel' },
+    ])
   }
 
   function submitRequest() {
@@ -711,6 +760,7 @@ export default function App() {
                       onFormModeChange={setFormMode}
                       onAnalyze={analyzeCurrentPhoto}
                       onChoosePhoto={choosePhotoSource}
+                      onAddExtraPhoto={addExtraPhoto}
                       onSubmit={submitRequest}
                       formStep={formStep}
                       onFormStepChange={setFormStep}
@@ -950,6 +1000,7 @@ function SenderForm({
   onFormModeChange,
   onAnalyze,
   onChoosePhoto,
+  onAddExtraPhoto,
   onSubmit,
   formStep,
   onFormStepChange,
@@ -969,6 +1020,7 @@ function SenderForm({
   onFormModeChange: (mode: 'initial' | 'filling') => void
   onAnalyze: () => void
   onChoosePhoto: () => void
+  onAddExtraPhoto: () => void
   onSubmit: () => void
   formStep: 'wizard' | 'choose_mode' | 'details'
   onFormStepChange: (step: 'wizard' | 'choose_mode' | 'details') => void
@@ -988,7 +1040,7 @@ function SenderForm({
   const canSubmit = progress >= 100 && !isSaving
 
   // Outlet options filtered by employee's city
-  const cityOutlets = data.outlets.filter((o) => o.city === currentUser.city)
+  const cityOutlets = data.outlets.filter((o) => o.city === currentUser?.city)
 
   if (formStep === 'wizard') {
     return (
@@ -1156,6 +1208,25 @@ function SenderForm({
           </View>
         )}
       </Pressable>
+
+      {/* Extra photos strip */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.extraPhotosRow}>
+        {(form.extraPhotoUrls ?? []).map((uri, idx) => (
+          <View key={idx} style={styles.extraPhotoThumb}>
+            <Image source={{ uri }} style={styles.extraPhotoThumbImg} />
+            <Pressable
+              style={styles.extraPhotoRemoveBtn}
+              onPress={() => onSetField('extraPhotoUrls', (form.extraPhotoUrls ?? []).filter((_, i) => i !== idx))}
+            >
+              <Text style={styles.extraPhotoRemoveText}>x</Text>
+            </Pressable>
+          </View>
+        ))}
+        <Pressable onPress={onAddExtraPhoto} style={styles.extraPhotoAddBtn}>
+          <Text style={styles.extraPhotoAddText}>+{'\n'}фото</Text>
+        </Pressable>
+      </ScrollView>
+
 
       {/* Product search input */}
       <Text style={styles.wizardFieldLabel}>Выберите продукт</Text>
@@ -1366,14 +1437,11 @@ function SenderForm({
         style={[styles.detailsSubmitBtn, !canSubmit && styles.disabledButton]}
         onPress={onSubmit}
       >
-        <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
-        <View style={styles.detailsSubmitIconBg}>
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.detailsSubmitIconEmoji}>OK</Text>
-          )}
-        </View>
+        {isSaving ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.detailsSubmitText}>Отправить на проверку</Text>
+        )}
       </Pressable>
     </View>
   )
@@ -2131,7 +2199,7 @@ function AddEmployeeModal({
           <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
             <View style={styles.detailTitleRow}>
               <Text style={styles.detailTitle}>Новый сотрудник</Text>
-              <Pressable onPress={onClose} style={styles.detailClose}>
+              <Pressable onPress={onClose} style={{ padding: 8 }}>
                 <Text style={styles.detailCloseText}>x</Text>
               </Pressable>
             </View>
@@ -2451,6 +2519,7 @@ function createDefaultForm(data: BootstrapPayload, sender?: Employee): FormState
     photoUrl: '',
     photoName: '',
     photoHash: '',
+    extraPhotoUrls: [],
     damageType: '',
     damageDiscoveredAt: '',
     productionDate: '',
@@ -2471,6 +2540,7 @@ function createEmptyForm(): FormState {
     photoUrl: '',
     photoName: '',
     photoHash: '',
+    extraPhotoUrls: [],
     damageType: '',
     damageDiscoveredAt: '',
     productionDate: '',
@@ -4234,6 +4304,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONT.regular,
     color: '#a0aec0',
+  },
+  extraPhotosRow: {
+    flexDirection: 'row',
+    marginTop: -4,
+  },
+  extraPhotoThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginRight: 8,
+    position: 'relative',
+  },
+  extraPhotoThumbImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  extraPhotoRemoveBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  extraPhotoRemoveText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontFamily: FONT.bold,
+    lineHeight: 14,
+  },
+  extraPhotoAddBtn: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e0',
+    backgroundColor: '#f7fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  extraPhotoAddText: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+    color: '#a0aec0',
+    textAlign: 'center',
+    lineHeight: 22,
   },
   detailsQuantityRow: {
     flexDirection: 'row',
