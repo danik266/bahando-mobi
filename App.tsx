@@ -1,4 +1,6 @@
 import { StatusBar } from 'expo-status-bar'
+import { Audio } from 'expo-av'
+import * as FileSystem from 'expo-file-system'
 import {
   GolosText_400Regular,
   GolosText_600SemiBold,
@@ -304,8 +306,9 @@ const translations = {
     photos: 'Фото',
     micStart: 'Голосом',
     micStop: 'Стоп',
+    speechProcessing: 'Распознаем...',
     speechUnsupportedTitle: 'Голосовой ввод',
-    speechUnsupportedMessage: 'На этом устройстве голосовая запись из приложения недоступна. Откройте клавиатуру и нажмите диктовку.',
+    speechUnsupportedMessage: 'Разрешите доступ к микрофону и попробуйте ещё раз.',
     speechError: 'Не удалось распознать речь. Попробуйте ещё раз.',
     pending: 'На проверке',
     approved: 'Подтверждено',
@@ -426,8 +429,9 @@ const translations = {
     photos: 'Фото',
     micStart: 'Дауыспен',
     micStop: 'Тоқтату',
+    speechProcessing: 'Танып жатырмыз...',
     speechUnsupportedTitle: 'Дауыспен енгізу',
-    speechUnsupportedMessage: 'Бұл құрылғыда қолданба ішінен дауыс жазу қолжетімсіз. Пернетақтаны ашып, диктовканы қолданыңыз.',
+    speechUnsupportedMessage: 'Микрофонға рұқсат беріп, қайталап көріңіз.',
     speechError: 'Сөйлеуді тану мүмкін болмады. Қайталап көріңіз.',
     pending: 'Тексеруде',
     approved: 'Расталды',
@@ -1504,7 +1508,7 @@ function SenderForm({
     return (
       <View style={styles.wizardContainer}>
         <Pressable onPress={() => onFormStepChange('wizard')} style={styles.detailsBackBtn}>
-          <Text style={styles.detailsBackText}>{'<'} {t(language, 'back')}</Text>
+          <Text style={styles.detailsBackText}>‹ {t(language, 'back')}</Text>
         </Pressable>
 
         <Text style={styles.wizardSectionTitle}>{t(language, 'aiAnalysis')}</Text>
@@ -1580,7 +1584,7 @@ function SenderForm({
         onPress={() => onFormStepChange(formEntryMode === 'ai' ? 'choose_mode' : 'wizard')}
         style={styles.detailsBackBtn}
       >
-        <Text style={styles.detailsBackText}>{'<-'} {t(language, 'back')}</Text>
+        <Text style={styles.detailsBackText}>‹ {t(language, 'back')}</Text>
       </Pressable>
 
       {/* Photo upload — mandatory for both modes */}
@@ -1895,12 +1899,73 @@ function ReviewerView({
   language: Language
 }) {
   const [isListening, setIsListening] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const recordingRef = useRef<Audio.Recording | null>(null)
   const speechRef = useRef<{ stop: () => void } | null>(null)
 
-  function handleVoiceReason() {
-    if (isListening) {
+  useEffect(() => {
+    return () => {
       speechRef.current?.stop()
+      void recordingRef.current?.stopAndUnloadAsync().catch(() => undefined)
+    }
+  }, [])
+
+  async function handleVoiceReason() {
+    if (isListening) {
+      if (Platform.OS === 'web') {
+        speechRef.current?.stop()
+        setIsListening(false)
+        return
+      }
+
+      const recording = recordingRef.current
+      recordingRef.current = null
       setIsListening(false)
+      if (!recording) return
+
+      try {
+        setIsTranscribing(true)
+        await recording.stopAndUnloadAsync()
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false })
+        const uri = recording.getURI()
+        if (!uri) throw new Error('Audio file is empty')
+
+        const base64 = await new FileSystem.File(uri).base64()
+        const result = await transcribeAudio(`data:audio/mp4;base64,${base64}`, language)
+        if (result.text) {
+          const nextValue = rejectionDraft.trim()
+            ? `${rejectionDraft.trim()} ${result.text}`
+            : result.text
+          onRejectionChange(nextValue)
+        }
+      } catch {
+        Alert.alert(t(language, 'speechUnsupportedTitle'), t(language, 'speechError'))
+      } finally {
+        setIsTranscribing(false)
+      }
+      return
+    }
+
+    if (Platform.OS !== 'web') {
+      try {
+        const permission = await Audio.requestPermissionsAsync()
+        if (!permission.granted) {
+          Alert.alert(t(language, 'speechUnsupportedTitle'), t(language, 'speechUnsupportedMessage'))
+          return
+        }
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        })
+        const recording = new Audio.Recording()
+        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
+        await recording.startAsync()
+        recordingRef.current = recording
+        setIsListening(true)
+      } catch {
+        Alert.alert(t(language, 'speechUnsupportedTitle'), t(language, 'speechError'))
+      }
       return
     }
 
@@ -2023,11 +2088,20 @@ function ReviewerView({
       <View style={styles.voiceLabelRow}>
         <Text style={styles.label}>{t(language, 'rejectionReason')}</Text>
         <Pressable
-          style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
+          disabled={isTranscribing}
+          style={[
+            styles.voiceButton,
+            isListening && styles.voiceButtonActive,
+            isTranscribing && styles.disabledButton,
+          ]}
           onPress={handleVoiceReason}
         >
           <Text style={[styles.voiceButtonText, isListening && styles.voiceButtonTextActive]}>
-            {isListening ? t(language, 'micStop') : t(language, 'micStart')}
+            {isTranscribing
+              ? t(language, 'speechProcessing')
+              : isListening
+                ? t(language, 'micStop')
+                : t(language, 'micStart')}
           </Text>
         </Pressable>
       </View>
@@ -3123,6 +3197,13 @@ async function analyzePhoto(
   }
 }
 
+async function transcribeAudio(audioBase64: string, language: Language) {
+  return requestJson<{ text: string }>('/ai/transcribe', {
+    method: 'POST',
+    body: JSON.stringify({ audioBase64, language }),
+  })
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const fetchOptions: RequestInit = {
     method: init?.method ?? 'GET',
@@ -3955,9 +4036,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   voiceButton: {
-    minHeight: 34,
+    minHeight: 36,
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#a9ddba',
@@ -4739,14 +4820,14 @@ const styles = StyleSheet.create({
   },
   // Mode selection cards
   modeCardsRow: {
-    flexDirection: 'row',
-    gap: IS_COMPACT_PHONE ? 8 : 10,
+    flexDirection: 'column',
+    gap: 10,
     marginTop: 4,
   },
   modeCard: {
-    flex: 1,
+    width: '100%',
     backgroundColor: '#ffffff',
-    minHeight: IS_COMPACT_PHONE ? 138 : 154,
+    minHeight: IS_COMPACT_PHONE ? 126 : 136,
     borderRadius: 14,
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
@@ -4802,12 +4883,12 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   modeCardTitle: {
-    fontSize: IS_COMPACT_PHONE ? 14 : 16,
+    fontSize: IS_COMPACT_PHONE ? 16 : 17,
     fontFamily: FONT.bold,
     color: '#1a202c',
   },
   modeCardDesc: {
-    fontSize: IS_COMPACT_PHONE ? 11 : 12,
+    fontSize: IS_COMPACT_PHONE ? 12 : 13,
     fontFamily: FONT.regular,
     color: '#718096',
     textAlign: 'center',
