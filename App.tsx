@@ -7,10 +7,12 @@ import {
   useFonts,
 } from '@expo-google-fonts/golos-text'
 import * as ImagePicker from 'expo-image-picker'
+import * as ImageManipulator from 'expo-image-manipulator'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   ImageBackground,
   KeyboardAvoidingView,
@@ -143,6 +145,31 @@ const FONT = {
   bold: 'GolosText_700Bold',
   black: 'GolosText_900Black',
 } as const
+
+type FontScalingComponent = {
+  defaultProps?: {
+    allowFontScaling?: boolean
+    maxFontSizeMultiplier?: number
+  }
+}
+
+const textDefaults = Text as unknown as FontScalingComponent
+textDefaults.defaultProps = {
+  ...(textDefaults.defaultProps ?? {}),
+  allowFontScaling: false,
+  maxFontSizeMultiplier: 1,
+}
+
+const textInputDefaults = TextInput as unknown as FontScalingComponent
+textInputDefaults.defaultProps = {
+  ...(textInputDefaults.defaultProps ?? {}),
+  allowFontScaling: false,
+  maxFontSizeMultiplier: 1,
+}
+
+const SCREEN_WIDTH = Dimensions.get('window').width
+const IS_COMPACT_PHONE = SCREEN_WIDTH <= 393
+const IS_TINY_PHONE = SCREEN_WIDTH <= 360
 
 const emptyData: BootstrapPayload = {
   outlets: [],
@@ -608,9 +635,9 @@ export default function App() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
       base64: true,
-      quality: 0.68,
+      quality: 0.45,
     })
-    applyImageResult(result)
+    void applyImageResult(result)
   }
 
   async function pickGallery() {
@@ -623,9 +650,9 @@ export default function App() {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: false,
       base64: true,
-      quality: 0.68,
+      quality: 0.45,
     })
-    applyImageResult(result)
+    void applyImageResult(result)
   }
 
   function choosePhotoSource() {
@@ -646,23 +673,28 @@ export default function App() {
     ])
   }
 
-  function applyImageResult(result: ImagePicker.ImagePickerResult) {
+  async function applyImageResult(result: ImagePicker.ImagePickerResult) {
     if (result.canceled) return
-    const asset = result.assets[0]
-    const mimeType = asset.mimeType ?? 'image/jpeg'
-    const dataUrl = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : asset.uri
-    const name = asset.fileName ?? `writeoff-${Date.now()}.jpg`
+    try {
+      const asset = result.assets[0]
+      const image = await imageAssetToJpeg(asset)
 
-    setForm((current) => ({
-      ...current,
-      photoUrl: dataUrl,
-      photoName: name,
-      photoHash: `sha256:${simpleHash(`${name}:${asset.uri}:${Date.now()}`)}`,
-      extraPhotoUrls: formEntryMode === 'ai' ? [] : current.extraPhotoUrls,
-    }))
-    setAiResult(null)
-    setAnalyzedPhotoHash('')
-    setFormMode('initial')
+      setForm((current) => ({
+        ...current,
+        photoUrl: image.dataUrl,
+        photoName: image.name,
+        photoHash: `sha256:${simpleHash(`${image.name}:${asset.uri}:${Date.now()}`)}`,
+        extraPhotoUrls: formEntryMode === 'ai' ? [] : current.extraPhotoUrls,
+      }))
+      setAiResult(null)
+      setAnalyzedPhotoHash('')
+      setFormMode('initial')
+    } catch (photoError) {
+      Alert.alert(
+        t(language, 'productPhoto'),
+        photoError instanceof Error ? photoError.message : 'Не удалось подготовить фото.',
+      )
+    }
   }
 
   function removeMainPhoto() {
@@ -689,16 +721,22 @@ export default function App() {
           const result = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
             base64: true,
-            quality: 0.68,
+            quality: 0.45,
           })
           if (!result.canceled) {
-            const asset = result.assets[0]
-            const mimeType = asset.mimeType ?? 'image/jpeg'
-            const dataUrl = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : asset.uri
-            setForm((current) => ({
-              ...current,
-              extraPhotoUrls: [...(current.extraPhotoUrls ?? []), dataUrl],
-            }))
+            try {
+              const asset = result.assets[0]
+              const image = await imageAssetToJpeg(asset)
+              setForm((current) => ({
+                ...current,
+                extraPhotoUrls: [...(current.extraPhotoUrls ?? []), image.dataUrl],
+              }))
+            } catch (photoError) {
+              Alert.alert(
+                t(language, 'productPhoto'),
+                photoError instanceof Error ? photoError.message : 'Не удалось подготовить фото.',
+              )
+            }
           }
         },
       },
@@ -710,21 +748,49 @@ export default function App() {
           const result = await ImagePicker.launchImageLibraryAsync({
             allowsEditing: false,
             base64: true,
-            quality: 0.68,
+            quality: 0.45,
           })
           if (!result.canceled) {
-            const asset = result.assets[0]
-            const mimeType = asset.mimeType ?? 'image/jpeg'
-            const dataUrl = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : asset.uri
-            setForm((current) => ({
-              ...current,
-              extraPhotoUrls: [...(current.extraPhotoUrls ?? []), dataUrl],
-            }))
+            try {
+              const asset = result.assets[0]
+              const image = await imageAssetToJpeg(asset)
+              setForm((current) => ({
+                ...current,
+                extraPhotoUrls: [...(current.extraPhotoUrls ?? []), image.dataUrl],
+              }))
+            } catch (photoError) {
+              Alert.alert(
+                t(language, 'productPhoto'),
+                photoError instanceof Error ? photoError.message : 'Не удалось подготовить фото.',
+              )
+            }
           }
         },
       },
       { text: t(language, 'cancel'), style: 'cancel' },
     ])
+  }
+
+  async function imageAssetToJpeg(asset: ImagePicker.ImagePickerAsset) {
+    const result = await ImageManipulator.manipulateAsync(
+      asset.uri,
+      [],
+      {
+        compress: 0.55,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      },
+    )
+    if (!result.base64) {
+      throw new Error('Не удалось подготовить фото.')
+    }
+
+    const sourceName = asset.fileName ?? `writeoff-${Date.now()}.jpg`
+    const name = sourceName.replace(/\.[^.]+$/, '') + '.jpg'
+    return {
+      name,
+      dataUrl: `data:image/jpeg;base64,${result.base64}`,
+    }
   }
 
   function submitRequest() {
@@ -3206,10 +3272,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 190,
-    height: 54,
+    width: IS_COMPACT_PHONE ? 166 : 190,
+    height: IS_COMPACT_PHONE ? 47 : 54,
     overflow: 'hidden',
-    borderWidth: 6,
+    borderWidth: IS_COMPACT_PHONE ? 5 : 6,
     borderColor: '#292929',
     backgroundColor: '#0d803d',
   },
@@ -3217,16 +3283,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 17,
-    height: 14,
+    top: IS_COMPACT_PHONE ? 15 : 17,
+    height: IS_COMPACT_PHONE ? 12 : 14,
     backgroundColor: '#292929',
   },
   logoStripe: {
     position: 'absolute',
     zIndex: 2,
-    top: 19,
-    width: 40,
-    height: 12,
+    top: IS_COMPACT_PHONE ? 17 : 19,
+    width: IS_COMPACT_PHONE ? 34 : 40,
+    height: IS_COMPACT_PHONE ? 10 : 12,
     backgroundColor: '#ff5e12',
   },
   logoStripeLeft: {
@@ -3238,7 +3304,7 @@ const styles = StyleSheet.create({
   logoText: {
     zIndex: 3,
     color: '#ffffff',
-    fontSize: 34,
+    fontSize: IS_COMPACT_PHONE ? 30 : 34,
     fontWeight: '900',
     fontFamily: FONT.black,
     letterSpacing: 0,
@@ -3266,8 +3332,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
   languageButton: {
-    minWidth: 38,
-    minHeight: 30,
+    minWidth: IS_COMPACT_PHONE ? 34 : 38,
+    minHeight: IS_COMPACT_PHONE ? 28 : 30,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,
@@ -3284,8 +3350,8 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   content: {
-    gap: 14,
-    padding: 14,
+    gap: IS_COMPACT_PHONE ? 12 : 14,
+    padding: IS_COMPACT_PHONE ? 12 : 14,
     paddingBottom: 40,
   },
   errorBox: {
@@ -3341,8 +3407,8 @@ const styles = StyleSheet.create({
   },
   tabs: {
     flexDirection: 'row',
-    gap: 5,
-    padding: 5,
+    gap: 4,
+    padding: 4,
     borderRadius: 10,
     backgroundColor: '#f8f8f8',
     borderWidth: 1,
@@ -3352,7 +3418,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: IS_COMPACT_PHONE ? 40 : 44,
     borderRadius: 6,
   },
   tabButtonActive: {
@@ -3600,14 +3666,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   input: {
-    minHeight: 48,
-    paddingHorizontal: 12,
+    minHeight: IS_COMPACT_PHONE ? 44 : 48,
+    paddingHorizontal: IS_COMPACT_PHONE ? 10 : 12,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cecece',
     backgroundColor: '#ffffff',
     color: '#212529',
-    fontSize: 17.6,
+    fontSize: IS_COMPACT_PHONE ? 15 : 16,
     fontFamily: FONT.regular,
   },
   commentInput: {
@@ -4156,14 +4222,14 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   productDropdownScroll: {
-    maxHeight: 240,
+    maxHeight: IS_COMPACT_PHONE ? 190 : 220,
   },
   productDropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: IS_COMPACT_PHONE ? 10 : 12,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 14,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -4171,7 +4237,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0faf4',
   },
   productDropdownText: {
-    fontSize: 16,
+    fontSize: IS_COMPACT_PHONE ? 14 : 15,
     fontFamily: FONT.regular,
     color: '#292929',
     flex: 1,
@@ -4181,7 +4247,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semi,
   },
   productDropdownUnit: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: FONT.regular,
     color: '#999',
     marginLeft: 8,
@@ -4202,7 +4268,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
   },
   outletDropdown: {
-    maxHeight: 280,
+    maxHeight: IS_COMPACT_PHONE ? 210 : 260,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#dee2e6',
@@ -4568,48 +4634,48 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   greenBannerContainer: {
-    padding: 16,
-    borderRadius: 16,
+    padding: IS_COMPACT_PHONE ? 12 : 14,
+    borderRadius: 14,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: IS_COMPACT_PHONE ? 12 : 14,
   },
   greenBannerImage: {
-    borderRadius: 16,
+    borderRadius: 14,
   },
   bannerLogoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 20,
+    gap: IS_COMPACT_PHONE ? 6 : 8,
+    marginBottom: IS_COMPACT_PHONE ? 14 : 18,
   },
   bannerLogoText: {
-    fontSize: 18,
+    fontSize: IS_COMPACT_PHONE ? 16 : 18,
     fontFamily: FONT.bold,
     color: '#ffffff',
   },
   bannerUserRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
+    gap: IS_COMPACT_PHONE ? 9 : 12,
+    marginBottom: IS_COMPACT_PHONE ? 12 : 14,
   },
   bannerAvatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: IS_COMPACT_PHONE ? 38 : 44,
+    height: IS_COMPACT_PHONE ? 38 : 44,
+    borderRadius: IS_COMPACT_PHONE ? 19 : 22,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
   },
   bannerAvatarEmoji: {
-    fontSize: 22,
+    fontSize: IS_COMPACT_PHONE ? 19 : 22,
   },
   bannerUserInfo: {
     flex: 1,
     gap: 2,
   },
   bannerUserName: {
-    fontSize: 18,
+    fontSize: IS_COMPACT_PHONE ? 16 : 18,
     fontFamily: FONT.bold,
     color: '#ffffff',
   },
@@ -4619,19 +4685,19 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
   bannerRolePill: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingVertical: IS_COMPACT_PHONE ? 3 : 4,
+    paddingHorizontal: IS_COMPACT_PHONE ? 8 : 10,
     borderRadius: 12,
     backgroundColor: '#ffffff30',
   },
   bannerRoleText: {
-    fontSize: 12,
+    fontSize: IS_COMPACT_PHONE ? 11 : 12,
     fontFamily: FONT.semi,
     color: '#ffffff',
   },
   bannerLogoutBtn: {
     flexDirection: 'row',
-    height: 42,
+    height: IS_COMPACT_PHONE ? 38 : 42,
     borderRadius: 10,
     backgroundColor: '#ffffff',
     alignItems: 'center',
@@ -4656,17 +4722,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   wizardContainer: {
-    gap: 16,
+    gap: IS_COMPACT_PHONE ? 12 : 14,
     paddingBottom: 24,
   },
   wizardSectionTitle: {
-    fontSize: 20,
+    fontSize: IS_COMPACT_PHONE ? 18 : 20,
     fontFamily: FONT.bold,
     color: '#1a202c',
-    marginTop: 8,
+    marginTop: IS_COMPACT_PHONE ? 4 : 8,
   },
   wizardSectionSub: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: FONT.regular,
     color: '#718096',
     marginTop: -10,
@@ -4674,18 +4740,21 @@ const styles = StyleSheet.create({
   // Mode selection cards
   modeCardsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: IS_COMPACT_PHONE ? 8 : 10,
     marginTop: 4,
   },
   modeCard: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    minHeight: IS_COMPACT_PHONE ? 138 : 154,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    padding: 16,
+    paddingHorizontal: IS_COMPACT_PHONE ? 10 : 14,
+    paddingVertical: IS_COMPACT_PHONE ? 12 : 14,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    gap: IS_COMPACT_PHONE ? 8 : 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -4693,9 +4762,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   modeCardIconBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: IS_COMPACT_PHONE ? 52 : 60,
+    height: IS_COMPACT_PHONE ? 52 : 60,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -4733,15 +4802,16 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   modeCardTitle: {
-    fontSize: 16,
+    fontSize: IS_COMPACT_PHONE ? 14 : 16,
     fontFamily: FONT.bold,
     color: '#1a202c',
   },
   modeCardDesc: {
-    fontSize: 12,
+    fontSize: IS_COMPACT_PHONE ? 11 : 12,
     fontFamily: FONT.regular,
     color: '#718096',
     textAlign: 'center',
+    lineHeight: IS_COMPACT_PHONE ? 15 : 17,
   },
   // Outlet chips
   outletSelectorBox: {
@@ -4775,12 +4845,12 @@ const styles = StyleSheet.create({
   },
   // AI photo block
   aiPhotoBlock: {
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   aiPhotoPressable: {
-    height: 200,
-    borderRadius: 18,
+    height: IS_COMPACT_PHONE ? 148 : 176,
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -4795,18 +4865,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#e2e8f0',
     borderStyle: 'dashed',
-    borderRadius: 18,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: IS_COMPACT_PHONE ? 8 : 10,
   },
   aiCameraIcon: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   aiCameraBody: {
-    width: 48,
-    height: 36,
+    width: IS_COMPACT_PHONE ? 42 : 48,
+    height: IS_COMPACT_PHONE ? 32 : 36,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
@@ -4814,17 +4884,17 @@ const styles = StyleSheet.create({
     borderColor: '#a0aec0',
   },
   aiCameraLens: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: IS_COMPACT_PHONE ? 14 : 16,
+    height: IS_COMPACT_PHONE ? 14 : 16,
+    borderRadius: IS_COMPACT_PHONE ? 7 : 8,
     borderWidth: 3,
     borderColor: '#a0aec0',
   },
   aiPhotoPlaceholderText: {
-    fontSize: 14,
+    fontSize: IS_COMPACT_PHONE ? 12 : 14,
     fontFamily: FONT.regular,
     color: '#a0aec0',
-    marginTop: 10,
+    marginTop: 6,
   },
   aiPhotoPlusBadge: {
     position: 'absolute',
@@ -4949,20 +5019,20 @@ const styles = StyleSheet.create({
     color: '#dd6b20',
   },
   wizardFieldLabel: {
-    fontSize: 14,
+    fontSize: IS_COMPACT_PHONE ? 13 : 14,
     fontFamily: FONT.semi,
     color: '#292929',
     marginTop: 8,
     marginBottom: 6,
   },
   wizardTextInput: {
-    height: 52,
-    borderRadius: 12,
+    height: IS_COMPACT_PHONE ? 46 : 50,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    fontSize: 15,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 14,
+    fontSize: IS_COMPACT_PHONE ? 14 : 15,
     fontFamily: FONT.regular,
     color: '#2d3748',
   },
@@ -5030,19 +5100,19 @@ const styles = StyleSheet.create({
   },
   wizardProceedBtn: {
     flexDirection: 'row',
-    height: 54,
-    borderRadius: 14,
+    height: IS_COMPACT_PHONE ? 48 : 52,
+    borderRadius: 12,
     backgroundColor: '#006c35',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    paddingHorizontal: 20,
+    marginTop: IS_COMPACT_PHONE ? 12 : 16,
+    paddingHorizontal: 16,
   },
   wizardProceedText: {
     flex: 1,
     textAlign: 'center',
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: IS_COMPACT_PHONE ? 14 : 16,
     fontFamily: FONT.bold,
     marginLeft: 28,
   },
@@ -5060,7 +5130,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.bold,
   },
   detailsContainer: {
-    gap: 16,
+    gap: IS_COMPACT_PHONE ? 12 : 14,
     paddingBottom: 24,
   },
   detailsBackBtn: {
@@ -5074,8 +5144,8 @@ const styles = StyleSheet.create({
     color: '#0d803d',
   },
   detailsPhotoBlock: {
-    height: 180,
-    borderRadius: 16,
+    height: IS_COMPACT_PHONE ? 140 : 165,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   detailsPhotoImage: {
@@ -5089,7 +5159,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#e2e8f0',
     borderStyle: 'dashed',
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -5098,7 +5168,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailsPhotoEmptyText: {
-    fontSize: 14,
+    fontSize: IS_COMPACT_PHONE ? 12 : 14,
     fontFamily: FONT.regular,
     color: '#a0aec0',
   },
@@ -5107,8 +5177,8 @@ const styles = StyleSheet.create({
     marginTop: -4,
   },
   extraPhotoThumb: {
-    width: 80,
-    height: 80,
+    width: IS_COMPACT_PHONE ? 68 : 76,
+    height: IS_COMPACT_PHONE ? 68 : 76,
     borderRadius: 10,
     overflow: 'hidden',
     marginRight: 8,
@@ -5137,8 +5207,8 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   extraPhotoAddBtn: {
-    width: 80,
-    height: 80,
+    width: IS_COMPACT_PHONE ? 68 : 76,
+    height: IS_COMPACT_PHONE ? 68 : 76,
     borderRadius: 10,
     borderWidth: 2,
     borderStyle: 'dashed',
@@ -5149,7 +5219,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   extraPhotoAddText: {
-    fontSize: 18,
+    fontSize: IS_COMPACT_PHONE ? 15 : 17,
     fontFamily: FONT.bold,
     color: '#a0aec0',
     textAlign: 'center',
@@ -5157,24 +5227,24 @@ const styles = StyleSheet.create({
   },
   detailsQuantityRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: IS_COMPACT_PHONE ? 8 : 12,
   },
   detailsQuantityInput: {
     flex: 1,
-    height: 52,
-    borderRadius: 12,
+    height: IS_COMPACT_PHONE ? 46 : 50,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    fontSize: 16,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 16,
+    fontSize: IS_COMPACT_PHONE ? 15 : 16,
     fontFamily: FONT.semi,
     color: '#2d3748',
   },
   detailsUnitBadge: {
-    height: 52,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    height: IS_COMPACT_PHONE ? 46 : 50,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 16,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f7fafc',
@@ -5196,8 +5266,8 @@ const styles = StyleSheet.create({
   reasonChipItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: IS_COMPACT_PHONE ? 8 : 10,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 14,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -5208,7 +5278,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fff4',
   },
   reasonChipText: {
-    fontSize: 13.5,
+    fontSize: IS_COMPACT_PHONE ? 12.5 : 13.5,
     fontFamily: FONT.regular,
     color: '#4a5568',
   },
@@ -5231,7 +5301,7 @@ const styles = StyleSheet.create({
   },
   costCardsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: IS_COMPACT_PHONE ? 8 : 12,
     marginTop: 8,
   },
   costCard: {
@@ -5240,7 +5310,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 14,
+    padding: IS_COMPACT_PHONE ? 11 : 14,
     gap: 4,
   },
   costCardLabel: {
@@ -5331,26 +5401,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   detailsCommentInput: {
-    height: 90,
-    borderRadius: 12,
+    height: IS_COMPACT_PHONE ? 78 : 90,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
+    paddingHorizontal: IS_COMPACT_PHONE ? 12 : 16,
     paddingTop: 12,
-    fontSize: 15,
+    fontSize: IS_COMPACT_PHONE ? 14 : 15,
     fontFamily: FONT.regular,
     color: '#2d3748',
     textAlignVertical: 'top',
   },
   detailsSubmitBtn: {
     flexDirection: 'row',
-    height: 54,
-    borderRadius: 14,
+    height: IS_COMPACT_PHONE ? 48 : 52,
+    borderRadius: 12,
     backgroundColor: '#006c35',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: IS_COMPACT_PHONE ? 12 : 16,
     paddingHorizontal: 20,
   },
   detailsSubmitText: {
